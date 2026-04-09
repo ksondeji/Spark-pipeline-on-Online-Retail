@@ -1,0 +1,52 @@
+## Outline
+
+This homework is about building an effective data preparation pipeline.
+It covers the following aspects covered throughout the session:
+
+* ingest raw data, curate it, transform it
+* load the data into delta tables to enforce constraints and allow updates
+* chose an optimal data layout to speedup query evaluation
+
+It is based on raw data about car prices crawled from a public source.
+
+You are asked to understand the data and decide about a relevant analysis (2 or 3 analytical queries) that can be performed on this data.
+For example, you could suggest to derive insights (min, max, avg) about the price per year of registration.
+You can use any other descriptive column that you may find useful.
+You are also kindly invited to briefly comment the choices you made at each phase.
+
+## Requested work
+
+* The current template uses car data as an example. You should use some public datasets with similar features.
+
+* You should present a summary of your work in 10 minutes
+
+* During the defense you can use the notebook to show specific parts of the work
+
+
+## Prerequisite
+
+## Phase 1: Understanding the data
+
+In this part, you are invited to get some knowledge about the data by reading its schema and extracting  some basic statistical information about the values of columns that you will find interesting.
+
+## Phase 2: Cleaning the data and selecting relevant columns
+
+In this part you are invited to decide which columns are useful for you analysis and to perform some cleaning on the data by removing outlier values (e.g. remove records with strange values for a specific column).
+The result of your cleaning and selection should be stored in a table called `phase1`
+
+Give a brief summary of your choices
+
+
+## Phase 3: Organizing the data
+In this part you are invited to load the data into delta tables where you will define meaningful constraints and conditions to be fulfiled by any future incoming data.
+The result of this phase should a delta table called `deltaPrices`
+
+Comment on the constraints you Added
+
+## Phase 4: Analysing the data and ensuring query evaluation effeciency
+
+Suggest 2 or 3 meaningfull queries as described above and suggest a data organization scheme for optimizing one such query of your choice.
+
+## Ingesting new data and reruning analytics  
+
+In this part you are invited to suggest the insertion of fictious new data that conforms to the schema established in phase 2 and to rerun some queries of phase 3 to see the evolution of the result. Ideally, write a query that compares an aggregation value in two different versions of the data by exploiting the delta history feature.
