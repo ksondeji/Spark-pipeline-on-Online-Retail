@@ -7,7 +7,6 @@ It covers the following aspects covered throughout the session:
 * load the data into delta tables to enforce constraints and allow updates
 * chose an optimal data layout to speedup query evaluation
 
-It is based on raw data about car prices crawled from a public source.
 
 You are asked to understand the data and decide about a relevant analysis (2 or 3 analytical queries) that can be performed on this data.
 For example, you could suggest to derive insights (min, max, avg) about the price per year of registration.
@@ -16,7 +15,7 @@ You are also kindly invited to briefly comment the choices you made at each phas
 
 ## Requested work
 
-* The current template uses car data as an example. You should use some public datasets with similar features.
+* You should use some public datasets with similar features.
 
 * You should present a summary of your work in 10 minutes
 
@@ -39,7 +38,7 @@ Give a brief summary of your choices
 
 ## Phase 3: Organizing the data
 In this part you are invited to load the data into delta tables where you will define meaningful constraints and conditions to be fulfiled by any future incoming data.
-The result of this phase should a delta table called `deltaPrices`
+The result of this phase should a delta table.
 
 Comment on the constraints you Added
 
