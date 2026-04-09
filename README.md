@@ -34,9 +34,9 @@ Les données brutes e-commerce contiennent des valeurs manquantes, annulations, 
 
 ## Présentation de la base de données
 
-**Source et périmètre.** Jeu [Online Retail](https://archive.ics.uci.edu/dataset/352/online+retail) : transactions d’une boutique en ligne britannique (cadeaux), sur la période 01/12/2010 – 09/12/2011. Granularité : une ligne = une ligne de facture (article × quantité × prix). Une part importante des clients sont des B2B (grossiste).
+Base de données [Online Retail](https://archive.ics.uci.edu/dataset/352/online+retail) : transactions d’une boutique en ligne britannique (cadeaux), sur la période 01/12/2010 – 09/12/2011. Granularité : une ligne = une ligne de facture (article × quantité × prix). Une part importante des clients sont des B2B (grossiste).
 
-**Variables d’origine (fichier CSV).**
+**Variables d’origine (fichier CSV)**
 
 | Variable | Rôle | Type logique | Commentaire |
 |----------|------|--------------|-------------|
@@ -51,7 +51,7 @@ Les données brutes e-commerce contiennent des valeurs manquantes, annulations, 
 
 **Typage dans le pipeline.** Après ingestion PySpark, les types sont alignés explicitement : `Quantity` en entier, `UnitPrice` en double, `InvoiceDate` en **timestamp** ; les identifiants restent en chaîne pour préserver les codes non strictement numériques et le préfixe `C` des annulations.
 
-**Observations utiles pour la préparation.**
+**Observations utiles pour la préparation**
 
 •	En terme de qualité : `CustomerID`, `Description`, parfois `Quantity` / `UnitPrice` absents ou incohérents ; lignes à exclure ou corriger pour des KPI de CA fiables.  
 •	Les annulations : les factures dont `InvoiceNo` commence par `c` représentent des annulations et sont traitées à part dans le nettoyage.  
