@@ -11,10 +11,10 @@ Des informations sur la base de données sont présentes dans le fichier `Online
 
 Un e-commerce a un fichier de données brutes contenant près de 500k observations, dans lequel on trouve des valeurs manquantes, des annulations, des prix ou quantités aberrants et un schéma peu adapté aux analyses fiables. Le besoin est de construire un pipeline reproductible qui :
 
-•	fiabilise les lignes utilisées pour le chiffre d’affaires et les segments clients ;
-•	guarantisse la qualité des futurs chargements (contraintes sur les delta tables) ;
-•	permet des plus requêtes rapides (optimisation grâce au format parquet) ;
-•	supporte l’évolution des données (merge, historique Delta, comparaison de versions).
+-	fiabilise les lignes utilisées pour le chiffre d’affaires et les segments clients
+-	guarantisse la qualité des futurs chargements (contraintes sur les delta tables)
+-	permet des plus requêtes rapides (optimisation grâce au format parquet)
+-	supporte l’évolution des données (merge, historique Delta, comparaison de versions)
 
 ## Prérequis pour l'installation
 
