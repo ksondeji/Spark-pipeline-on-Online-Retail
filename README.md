@@ -13,7 +13,7 @@ Un e-commerce a un fichier de données brutes contenant près de 500k observatio
 
 -	fiabilise les lignes utilisées pour le chiffre d’affaires et les segments clients
 -	guarantisse la qualité des futurs chargements (contraintes sur les delta tables)
--	permet des plus requêtes rapides (optimisation grâce au format parquet)
+-	permet des requêtes plus rapides (optimisation grâce au format parquet)
 -	supporte l’évolution des données (merge, historique Delta, comparaison de versions)
 
 ## Prérequis pour l'installation
