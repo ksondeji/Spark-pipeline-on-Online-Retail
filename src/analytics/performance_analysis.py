@@ -1,0 +1,1 @@
+# benchmark partitionné/non partitionné ; temps d’exécution ; explain plans.
