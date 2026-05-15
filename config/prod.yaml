@@ -1,0 +1,2 @@
+raw_path: s3://bucket/raw/
+curated_path: s3://bucket/curated/
