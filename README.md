@@ -90,7 +90,9 @@ Les chiffres exacts peuvent varier selon la machine, l’ordre d’exécution et
 ## Prochaines étapes possibles
 
 - Déployer le pipeline sur **Databricks** ou **Spark cluster** avec chemins cloud (S3 / ADLS) et politiques de vacuum / retention Delta.  
-- Remplacer les tables CSV partitionnées par des tables Delta partitionnées + `OPTIMIZE` / `ZORDER` sur les colonnes les plus filtrées.  
-- Industrialiser : tests sur contraintes et volumétrie, scheduling (Airflow / dbt), et monitoring de la qualité (Great Expectations, Deequ).  
+- Uniformiser le stockage analytique autour de Delta Lake, avec partitionnement métier (éviter le sur-partitionnement sur les colonnes à forte cardinalité), OPTIMIZE, ZORDER, compaction et réduction des petits fichiers.  
+- Industrialiser : tests sur contraintes et volumétrie, scheduling (Airflow) et monitoring de la qualité (Great Expectations)
+    ingestion -> cleaning -> enrichment -> quality_checks -> publish
+
 - Étendre les analyses (RFM, cohortes, panier moyen temporel) et documenter les SLA de fraîcheur des données.
 
