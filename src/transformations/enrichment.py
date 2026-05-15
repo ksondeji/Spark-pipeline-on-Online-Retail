@@ -1,0 +1,1 @@
+# continent ; segmentation ; catégories produits ; shopsize
