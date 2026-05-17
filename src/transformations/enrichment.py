@@ -1,5 +1,5 @@
 # continent ; segmentation ; catégories produits ; shopsize
-from pyspark.sql.functions import col, when
+from pyspark.sql.functions import col, when, lower
 
 def enrich_transactions(df):
     return (
