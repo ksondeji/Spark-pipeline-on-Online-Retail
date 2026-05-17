@@ -19,8 +19,8 @@ def spark():
 def test_run_checks_passes_after_cleaning(spark):
     raw = spark.createDataFrame(
         [
-            ("536365", "85123A", "WHITE HEART", 6, "01/12/2010 08:26:00", 2.55, "17850", "UK"),
-            ("536366", "71053", "LANTERN", 6, "01/12/2010 08:28:00", 3.39, "17850", "UK"),
+            ("536365", "85123A", "WHITE HEART", 6, "01/12/2010 08:26:00", 2.55, "17850", "United Kingdom"),
+            ("536366", "71053", "LANTERN", 6, "01/12/2010 08:28:00", 3.39, "17850", "United Kingdom"),
         ],
         [
             "InvoiceNo",
