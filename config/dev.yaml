@@ -1,2 +1,11 @@
-raw_path: data/raw/
-curated_path: data/curated/
+# configs/dev.yaml
+paths:
+  raw: "data/raw/Online_Retail.csv"
+  bronze: "data/bronze"
+  silver: "data/silver"
+  gold: "data/gold"
+spark:
+  app_name: "OnlineRetail-dev"
+  master: "local[*]"
+  executor_memory: "4G"
+  driver_memory: "4G"
