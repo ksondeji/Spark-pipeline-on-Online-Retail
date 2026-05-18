@@ -8,20 +8,45 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+
+from src.utils.config import is_databricks
+
 WINUTILS_URL = (
     "https://raw.githubusercontent.com/cdarlint/winutils/master/"
     "hadoop-3.3.5/bin/winutils.exe"
 )
 
-from pyspark import SparkConf
-from pyspark.sql import SparkSession
+
+def get_spark(config: dict[str, Any] | None = None) -> SparkSession:
+    """
+    Point d'entrée unique : session Databricks (Delta natif) ou session locale.
+    """
+    if is_databricks():
+        return _create_databricks_session(config)
+    return create_spark_session((config or {}).get("spark"))
+
+
+def _create_databricks_session(config: dict[str, Any] | None = None) -> SparkSession:
+    """
+    Sur Databricks, Spark et Delta sont déjà configurés par le runtime.
+    On réutilise la session active ou on en crée une via le builder du cluster.
+    """
+    spark_config = (config or {}).get("spark", {})
+    spark = SparkSession.getActiveSession()
+    if spark is None:
+        spark = (
+            SparkSession.builder.appName(
+                spark_config.get("app_name", "OnlineRetail-pipeline")
+            )
+            .getOrCreate()
+        )
+    spark.sparkContext.setLogLevel("WARN")
+    return spark
 
 
 def _fix_java_home() -> None:
-    """
-    Corrige un JAVA_HOME invalide (ex. chemin avec '*' sous Windows),
-    cause fréquente de : « La syntaxe du nom de fichier... est incorrecte ».
-    """
     java_home = os.environ.get("JAVA_HOME", "")
     if java_home and "*" not in java_home and Path(java_home).is_dir():
         return
@@ -33,12 +58,10 @@ def _fix_java_home() -> None:
             "sur le dossier d'installation (sans caractère '*')."
         )
 
-    resolved_home = Path(java_exe).resolve().parent.parent
-    os.environ["JAVA_HOME"] = str(resolved_home)
+    os.environ["JAVA_HOME"] = str(Path(java_exe).resolve().parent.parent)
 
 
 def _setup_hadoop_home_windows() -> str | None:
-    """Prépare HADOOP_HOME + winutils.exe (obligatoire pour Spark sous Windows)."""
     if platform.system() != "Windows":
         return None
 
@@ -55,12 +78,6 @@ def _setup_hadoop_home_windows() -> str | None:
 
 
 def _configure_pyspark_env() -> str | None:
-    """
-    Corrige le démarrage PySpark sous Windows :
-    - utilise l'interpréteur Python réel (pas 'python3' introuvable)
-    - définit SPARK_HOME explicitement
-    - évite les chemins avec espaces pour les fichiers temporaires Spark
-    """
     _fix_java_home()
 
     python_exe = sys.executable
@@ -69,10 +86,8 @@ def _configure_pyspark_env() -> str | None:
 
     import pyspark
 
-    spark_home = Path(pyspark.__file__).resolve().parent
-    os.environ["SPARK_HOME"] = str(spark_home)
+    os.environ["SPARK_HOME"] = str(Path(pyspark.__file__).resolve().parent)
 
-    # Répertoire temporaire sans espaces (chemins du projet sous OneDrive en ont)
     spark_tmp = Path(os.environ.get("LOCALAPPDATA", "C:/temp")) / "spark-tmp"
     spark_tmp.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("SPARK_LOCAL_DIRS", str(spark_tmp))
@@ -80,7 +95,7 @@ def _configure_pyspark_env() -> str | None:
 
 
 def create_spark_session(spark_config: dict[str, Any] | None = None) -> SparkSession:
-    """Crée une SparkSession locale avec l'extension Delta Lake."""
+    """Crée une SparkSession locale avec l'extension Delta Lake (hors Databricks)."""
     hadoop_home = _configure_pyspark_env()
 
     spark_config = spark_config or {}
@@ -98,8 +113,7 @@ def create_spark_session(spark_config: dict[str, Any] | None = None) -> SparkSes
         conf = conf.set("spark.hadoop.hadoop.home.dir", hadoop_home)
 
     conf = (
-        conf
-        .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        conf.set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .set(
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
