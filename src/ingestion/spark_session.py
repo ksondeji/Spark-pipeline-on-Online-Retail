@@ -31,23 +31,17 @@ def get_spark(config: dict[str, Any] | None = None) -> SparkSession:
 
 
 def _create_databricks_session(config: dict[str, Any] | None = None) -> SparkSession:
-    spark_config = (config or {}).get("spark", {})
-    app_name = spark_config.get("app_name", "OnlineRetail-pipeline")
-
     spark = SparkSession.getActiveSession()
     if spark is not None:
-        # PAS de spark.sparkContext.setLogLevel() — incompatible Spark Connect
         return spark
 
     try:
         from databricks.connect import DatabricksSession
-        spark = DatabricksSession.builder.appName(app_name).getOrCreate()
-        return spark
+        return DatabricksSession.builder.getOrCreate()
     except ImportError:
         pass
 
-    spark = SparkSession.builder.appName(app_name).getOrCreate()
-    return spark
+    return SparkSession.builder.getOrCreate()
 
 
 def _fix_java_home() -> None:
