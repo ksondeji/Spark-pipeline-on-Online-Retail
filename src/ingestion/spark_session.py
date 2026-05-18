@@ -31,44 +31,23 @@ def get_spark(config: dict[str, Any] | None = None) -> SparkSession:
 
 
 def _create_databricks_session(config: dict[str, Any] | None = None) -> SparkSession:
-    """
-    Session sur cluster Databricks ou via Databricks Connect.
-
-    Sur DBR récents, SparkSession.builder.getOrCreate() est refusé sans session active :
-    il faut DatabricksSession.builder (voir message RuntimeError Connect).
-    """
     spark_config = (config or {}).get("spark", {})
     app_name = spark_config.get("app_name", "OnlineRetail-pipeline")
 
     spark = SparkSession.getActiveSession()
     if spark is not None:
-        spark.sparkContext.setLogLevel("WARN")
+        # PAS de spark.sparkContext.setLogLevel() — incompatible Spark Connect
         return spark
 
-    # DBR 15+ / Databricks Connect : DatabricksSession obligatoire
     try:
         from databricks.connect import DatabricksSession
-
         spark = DatabricksSession.builder.appName(app_name).getOrCreate()
-        spark.sparkContext.setLogLevel("WARN")
         return spark
     except ImportError:
         pass
 
-    # Anciens runtimes cluster (session Spark classique)
-    try:
-        spark = SparkSession.builder.appName(app_name).getOrCreate()
-        spark.sparkContext.setLogLevel("WARN")
-        return spark
-    except RuntimeError as exc:
-        if "Databricks Connect" in str(exc) or "DatabricksSession" in str(exc):
-            raise RuntimeError(
-                "Impossible de créer la session Spark. Sur Databricks : exécutez d'abord "
-                "une cellule dans un notebook (session active) ou installez le package "
-                "'databricks-connect' sur le cluster. En local vers un workspace distant : "
-                "pip install databricks-connect et configurez votre profil Databricks."
-            ) from exc
-        raise
+    spark = SparkSession.builder.appName(app_name).getOrCreate()
+    return spark
 
 
 def _fix_java_home() -> None:

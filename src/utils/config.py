@@ -13,8 +13,12 @@ REMOTE_PATH_PREFIXES = ("dbfs:", "abfss:", "s3://", "s3a://", "gs://", "/Volumes
 
 
 def is_databricks_cluster() -> bool:
-    """True si le code s'exécute sur un worker/notebook Databricks (cluster)."""
-    return "DATABRICKS_RUNTIME_VERSION" in os.environ
+    """True si le code s'exécute sur un cluster ou runtime Serverless Databricks."""
+    return (
+        "DATABRICKS_RUNTIME_VERSION" in os.environ
+        or os.environ.get("IS_SERVERLESS", "").upper() == "TRUE"
+        or "DATABRICKS_SERVERLESS" in os.environ
+    )
 
 
 def is_databricks() -> bool:
