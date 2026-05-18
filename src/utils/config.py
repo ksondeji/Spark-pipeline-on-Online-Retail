@@ -5,27 +5,51 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# Préfixes laissés tels quels (pas de résolution relative au repo)
+REMOTE_PATH_PREFIXES = ("dbfs:", "abfss:", "s3://", "s3a://", "gs://", "/Volumes/")
+
+
+def is_databricks() -> bool:
+    """True si le code s'exécute sur un runtime Databricks."""
+    return "DATABRICKS_RUNTIME_VERSION" in os.environ
+
+
+def _load_dotenv_if_local() -> None:
+    if not is_databricks():
+        from dotenv import load_dotenv
+
+        load_dotenv(PROJECT_ROOT / ".env")
 
 
 def _resolve_path(value: str | None) -> str | None:
     if not value:
         return None
+    if value.startswith(REMOTE_PATH_PREFIXES):
+        return value.rstrip("/")
     path = Path(value)
     if not path.is_absolute():
         path = PROJECT_ROOT / path
     return str(path.resolve())
 
 
+def _default_env_name() -> str:
+    if is_databricks():
+        return "databricks"
+    return os.getenv("ENV", "dev")
+
+
 def get_config(env: str | None = None) -> dict[str, Any]:
     """
     Charge config/{env}.yaml puis surcharge avec les variables d'environnement.
-  Priorité : variables d'env > fichier YAML > valeurs par défaut.
+
+    Sur Databricks : ENV par défaut = ``databricks`` (fichier config/databricks.yaml).
+    En local : ENV par défaut = ``dev`` + chargement du fichier ``.env``.
     """
-    load_dotenv(PROJECT_ROOT / ".env")
-    env_name = env or os.getenv("ENV", "dev")
+    _load_dotenv_if_local()
+    env_name = env or _default_env_name()
     config_file = PROJECT_ROOT / "config" / f"{env_name}.yaml"
 
     if not config_file.is_file():
@@ -54,6 +78,8 @@ def get_config(env: str | None = None) -> dict[str, Any]:
     spark_cfg = file_cfg.get("spark") or {}
     return {
         "env": env_name,
+        "runtime": file_cfg.get("runtime", "databricks" if is_databricks() else "local"),
+        "is_databricks": is_databricks(),
         "project_root": str(PROJECT_ROOT),
         "paths": paths,
         "spark": {
