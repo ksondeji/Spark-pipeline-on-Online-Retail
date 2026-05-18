@@ -2,97 +2,222 @@
 
 ## Description
 
-Ce projet porte sur la mise en place d'un pipeline efficace de préparation des données couvrant les différents aspects suivants: ingestion du jeu de données public *Online Retail* (UCI), nettoyage, enrichissement, stockage sous **Delta Lake** avec contraintes, requêtes analytiques et optimisation de lecture via le partitionnement des données.
+Ce projet met en place un pipeline de données sur le jeu public [Online Retail](https://archive.ics.uci.edu/dataset/352/online+retail) (UCI) : ingestion, nettoyage, enrichissement, contrôles qualité, stockage **Delta Lake** (bronze / silver / gold) et analyses (ventes, performance, historique Delta).
 
-Le travail principal est documenté dans le notebook `Online_retail_pipeline.ipynb` (environnement type **Google Colab**). 
-Des informations sur la base de données sont présentes dans le fichier `Online retail database informations.txt`.
+Deux modes d’exécution coexistent :
+
+- **Notebook** `Online_retail_pipeline.ipynb` — exploration complète, contraintes Delta sur tables Spark, MERGE, time travel (environnement type Google Colab).
+- **Pipeline Python** `src/main.py` — orchestration reproductible, configuration externalisée, tests unitaires.
+
+Informations détaillées sur la base : `Online retail database informations.txt`.
+
+## Architecture du projet
+
+```
+Spark on Online Retail/
+├── config/
+│   ├── dev.yaml              # chemins locaux + paramètres Spark
+│   └── prod.yaml             # chemins cloud (S3, etc.)
+├── data/
+│   ├── raw/                  # CSV source
+│   ├── bronze/               # snapshot brut (Delta)
+│   ├── silver/               # données nettoyées (Delta)
+│   └── gold/                 # données enrichies (Delta)
+├── src/
+│   ├── main.py               # point d’entrée du pipeline
+│   ├── ingestion/
+│   │   ├── spark_session.py  # Spark + Delta (Windows-friendly)
+│   │   ├── read_data.py      # lecture CSV typée
+│   │   └── write_data.py     # écriture Delta
+│   ├── transformations/
+│   │   ├── cleaning.py       # règles de nettoyage
+│   │   └── enrichment.py     # segments, catégories, OrderAmount
+│   ├── quality/
+│   │   └── checks.py         # contrôles + rapport / exception
+│   ├── analytics/
+│   │   ├── sales_analysis.py
+│   │   ├── performance_analysis.py
+│   │   └── runner.py         # analyses post-pipeline
+│   └── utils/
+│       ├── config.py         # get_config()
+│       └── logger.py
+├── tests/
+│   ├── test_cleaning.py
+│   └── test_quality.py
+├── Online_retail_pipeline.ipynb
+├── requirements.txt
+└── .env.example
+```
 
 ## Le problème
 
-Un e-commerce a un fichier de données brutes contenant près de 500k observations, dans lequel on trouve des valeurs manquantes, des annulations, des prix ou quantités aberrants et un schéma peu adapté aux analyses fiables. Le besoin est de construire un pipeline reproductible qui :
+Un e-commerce dispose d’environ **500k** lignes de transactions brutes avec valeurs manquantes, annulations, prix ou quantités aberrants et un schéma peu adapté aux KPI fiables. Objectifs :
 
--	fiabilise les lignes utilisées pour le chiffre d’affaires et les segments clients
--	guarantisse la qualité des futurs chargements (contraintes sur les delta tables)
--	permet des requêtes plus rapides (optimisation grâce au format parquet)
--	supporte l’évolution des données (merge, historique Delta, comparaison de versions)
+- fiabiliser le chiffre d’affaires et les segments clients
+- garantir la qualité des chargements (contrôles + contraintes Delta dans le notebook)
+- accélérer les requêtes (partitionnement, format columnar)
+- supporter l’évolution des données (MERGE, historique Delta).
 
-## Prérequis pour l'installation
+## Pipeline industrialisé (`src/main.py`)
 
-- **Python 3** avec Jupyter ou Google Colab  
-- Fichier `Online_Retail.csv` — [UCI Online Retail](https://archive.ics.uci.edu/dataset/352/online+retail)  
-- Dépendances principales :  
-  `pyspark==3.5.3`, `delta-spark==3.2.1`, `ydata-profiling`, `pyngrok` (optionnel)
+Flux exécuté dans l’ordre :
+
+| Étape | Action |
+|-------|--------|
+| 1 | `get_config()` — charge `config/{env}.yaml` + surcharge `.env` |
+| 2 | `create_spark_session()` — Spark local + extension Delta |
+| 3 | `read_raw_csv()` → `df_raw` |
+| 4 | `write_delta(df_raw, bronze)` — snapshot bronze |
+| 5 | `clean_transactions(df_raw)` → `df_silver` |
+| 6 | `run_checks(df_silver, scope="cleaning")` — lève `DataQualityError` si échec |
+| 7 | `write_delta(df_silver, silver)` |
+| 8 | `enrich_transactions(df_silver)` → `df_gold` |
+| 9 | `run_checks(df_gold, scope="enriched")` puis `write_delta(df_gold, gold)` |
+| 10 | `run_analytics()` si `--analytics` (CA par pays / catégorie + benchmark partitionnement) |
+
+### Règles de nettoyage (`clean_transactions`)
+
+- Suppression des nulls sur `CustomerID`, `UnitPrice`, `Quantity`, `InvoiceNo`
+- Exclusion des annulations : `lower(InvoiceNo)` commence par `c`
+- Exclusion de la facture aberrante `541431`
+- Conservation des articles avec `length(StockCode) = 5`
+- Cast : `Quantity` → int, `UnitPrice` → double, `InvoiceDate` → timestamp
+
+### Enrichissement (`enrich_transactions`)
+
+- `StockCode` → `ItemCode`, `OrderAmount` = `Quantity × UnitPrice`
+- `Purchase_segment`, `Shopsize`, `Continent`, `product_category` (règles sur la description)
+
+### Contrôles qualité (`run_checks`)
+
+Retourne un rapport structuré (`passed`, `constraints`, `violations`) ou lève `DataQualityError`. Scopes : `cleaning` (silver) et `enriched` (gold).
+
+## Prérequis
+
+- **Python 3.10+** (testé avec 3.11)
+- **JDK 11 ou 17** — `JAVA_HOME` doit pointer vers le dossier JDK **sans wildcard** (ex. éviter `jdk-17.*`)
+- Fichier `data/raw/Online_Retail.csv` — [UCI Online Retail](https://archive.ics.uci.edu/dataset/352/online+retail)
+
+Dépendances principales (`requirements.txt`) :
+
+```
+python-dotenv
+pyspark==3.5.3
+delta-spark==3.2.1
+pyyaml
+pytest
+```
+
+Pour le notebook : `ydata-profiling`, `pyngrok` (optionnel).
 
 ## Installation et lancement
 
-1. Cloner ou ouvrir ce dossier, placer `Online_Retail.csv` dans un répertoire accessible (dans le notebook Colab, le chemin utilisé est `/Data_OR/`).
-2. Ouvrir `Online_retail_pipeline.ipynb` et exécuter les cellules **dans l’ordre**.
-3. Adapter les chemins de lecture CSV si vous travaillez en local, par exemple remplacer `"/Data_OR/Online_Retail.csv"` par le chemin absolu de votre fichier.
-4. La session Spark est créée en `local[*]` avec l’extension **Delta** (`DeltaSparkSessionExtension`, `DeltaCatalog`) et des paramètres mémoire adaptés au notebook (8G driver/executor dans la config d’origine).
+```bash
+# 1. Cloner le dépôt et installer les dépendances
+pip install -r requirements.txt
 
-> **Note :** Sur une machine locale, vérifiez la cohérence des versions **PySpark** et **delta-spark** ; ajustez la mémoire si besoin.
+# 2. Copier la configuration d’environnement (optionnel)
+cp .env.example .env
+
+# 3. Placer le CSV (ou adapter config/dev.yaml)
+#    data/raw/Online_Retail.csv
+
+# 4. Lancer le pipeline
+python -m src.main
+
+# Avec analyses et benchmark partitionné / non partitionné
+python -m src.main --analytics
+
+# Environnement prod (chemins S3 dans config/prod.yaml)
+python -m src.main --env prod
+```
+
+Chemins par défaut (`config/dev.yaml`) :
+
+| Couche | Chemin |
+|--------|--------|
+| raw | `data/raw/Online_Retail.csv` |
+| bronze | `data/bronze` |
+| silver | `data/silver` |
+| gold | `data/gold` |
+
+Surcharge via `.env` : `RAW_PATH`, `BRONZE_PATH`, `SILVER_PATH`, `GOLD_PATH`, `ENV`.
+
+### Tests
+
+```bash
+python -m pytest tests/test_cleaning.py tests/test_quality.py -q
+```
+
+Le premier lancement peut être lent (démarrage JVM Spark).
+
+### Notebook (Colab / Jupyter)
+
+1. Ouvrir `Online_retail_pipeline.ipynb` et exécuter les cellules dans l’ordre.
+2. Adapter le chemin CSV si besoin (historiquement `/Data_OR/Online_Retail.csv`).
+
+> **Windows :** `spark_session.py` configure automatiquement `PYSPARK_PYTHON`, corrige un `JAVA_HOME` invalide et prépare `HADOOP_HOME` + `winutils.exe` si nécessaire.
 
 ## Présentation de la base de données
 
-Base de données [Online Retail](https://archive.ics.uci.edu/dataset/352/online+retail) : transactions d’une boutique en ligne britannique (cadeaux), sur la période 01/12/2010 – 09/12/2011. Granularité : une ligne = une ligne de facture (article × quantité × prix). Une part importante des clients sont des B2B (grossiste).
+Transactions d’une boutique en ligne britannique (01/12/2010 – 09/12/2011). Une ligne = une ligne de facture (article × quantité × prix).
 
-**Variables d’origine (fichier CSV)**
+| Variable | Rôle | Commentaire |
+|----------|------|-------------|
+| `InvoiceNo` | Identifiant transaction | Préfixe **`C`** / **`c`** = annulation |
+| `StockCode` | Référence produit | 5 caractères attendus en silver |
+| `Description` | Libellé produit | Source des catégories enrichies |
+| `Quantity` | Quantité | Cast entier après nettoyage |
+| `InvoiceDate` | Horodatage | Format CSV `dd/MM/yyyy HH:mm:ss` |
+| `UnitPrice` | Prix unitaire (GBP) | Cast double après nettoyage |
+| `CustomerID` | Client | Nombreux nulls en brut |
+| `Country` | Pays | Forte part UK |
 
-| Variable | Rôle | Type logique | Commentaire |
-|----------|------|--------------|-------------|
-| `InvoiceNo` | Identifiant de transaction | Chaîne / identifiant | Souvent numérique ; préfixe **`C`** = annulation. |
-| `StockCode` | Référence produit | Chaîne (souvent 5 caractères) | Identifiant article. |
-| `Description` | Libellé produit | Texte | Peut contenir des valeurs manquantes ou bruitées. |
-| `Quantity` | Quantité vendue | Entier | Peut être négative (retours / annulations liées). |
-| `InvoiceDate` | Horodatage | Date/heure | Format d’origine `dd/MM/yyyy HH:mm:ss` dans le CSV. |
-| `UnitPrice` | Prix unitaire | Numérique (GBP) | Sterling par unité. |
-| `CustomerID` | Client | Chaîne / identifiant | Nombreuses valeurs nulles en brut. |
-| `Country` | Pays du client | Catégoriel | Forte concentration sur le **Royaume-Uni**. |
-
-**Typage dans le pipeline.** Après ingestion PySpark, les types sont alignés explicitement : `Quantity` en entier, `UnitPrice` en double, `InvoiceDate` en **timestamp** ; les identifiants restent en chaîne pour préserver les codes non strictement numériques et le préfixe `C` des annulations.
-
-**Observations utiles pour la préparation**
-
-•	En terme de qualité : `CustomerID`, `Description`, parfois `Quantity` / `UnitPrice` absents ou incohérents ; lignes à exclure ou corriger pour des KPI de CA fiables.  
-•	Les annulations : les factures dont `InvoiceNo` commence par `c` représentent des annulations et sont traitées à part dans le nettoyage.  
-•	Ajout de colonnes : `OrderAmount` = `Quantity × UnitPrice` pour obtenir le montant de chaque commandes.
-
-**Schéma enrichi (tables curées, ex. `phase3` / `phase4`).** S’ajoutent notamment : `OrderAmount`, `ItemCode` (renommage de `StockCode`, avec normalisation de longueur dans les contraintes), `Purchase_segment` (`High_spender`...), `Shopsize`, `Continent`, `product_category` (créé à partir de la description).
+**Schéma gold (enrichi).** `ItemCode`, `OrderAmount`, `Purchase_segment`, `Shopsize`, `Continent`, `product_category`, `desc_clean`.
 
 ## Réalisations
 
+### Pipeline Python (`src/`)
+
+| Composant | Contenu |
+|-----------|---------|
+| **Ingestion** | Lecture CSV typée, écriture Delta bronze / silver / gold |
+| **Nettoyage** | Règles métier alignées sur le notebook (`phase1`) |
+| **Qualité** | Contrôles automatisés avec rapport et arrêt en cas d’échec |
+| **Enrichissement** | Colonnes analytiques pour la couche gold |
+| **Analytics** | Agrégations CA ; benchmark partitionné vs non partitionné ; modules pour historique Delta (`performance_analysis.py`) |
+
+### Notebook (`Online_retail_pipeline.ipynb`)
+
 | Phase | Contenu |
 |--------|---------|
-| **Compréhension** | Schéma, statistiques descriptives, profils **YData Profiling** sur des échantillons, exploration par pays / produits / montants. |
-| **Nettoyage (`phase1`)** | Cast des types, parsing des dates, filtrage des nulls sur les champs clés, suppression des factures annulées (`InvoiceNo` commençant par `c`), filtrage des quantités et prix non pertinents, colonne **`OrderAmount`** = `Quantity × UnitPrice`, table Delta **`phase1`**. |
-| **Enrichissement (`phase2` → `phase3`)** | Renommage `StockCode` → `ItemCode`, segments d’achat, **`Shopsize`**, **`Continent`**, catégorisation de produits à partir de la description (NLP léger : tokenisation, stop words, règles), table Delta **`phase3`**. |
-| **Organisation Delta** | Contraintes **`CHECK`** sur `phase3` : `OrderAmount > 0`, pas d’annulation sur `InvoiceNo`, `length(ItemCode) = 5`. Export vers **`phase4`** (sans colonne intermédiaire `tokens`). |
-| **Analyse & performance** | Agrégations (CA par pays, analyses par catégorie, etc.) ; table **`sales_per_country_continent`** partitionnée par **`Country`, `Continent`** ; mesure du temps d’exécution d’une requête de CA par pays **avec et sans** partitionnement ; table bucketisée **`sales_clus_country_Shopsize`** ; activation possible du **aggregate pushdown** Parquet. |
-| **Nouvelles données & historique** | **`MERGE INTO phase4`** Utilisation de la base de données entières ; utilisation de **`DESCRIBE HISTORY`** et **`VERSION AS OF`** pour comparer l'agrégations entre versions. |
+| **Compréhension** | Schéma, stats, profils YData Profiling, explorations |
+| **Nettoyage (`phase1`)** | Même logique métier que `cleaning.py` + table Delta |
+| **Enrichissement (`phase2` → `phase3`)** | NLP léger sur descriptions, catégorisation avancée |
+| **Organisation Delta** | Contraintes `CHECK` sur `phase3` / `phase4` |
+| **Performance** | Table partitionnée `sales_per_country_continent`, plans `EXPLAIN`, mesures de temps |
+| **Historique** | `MERGE INTO phase4`, `DESCRIBE HISTORY`, `VERSION AS OF` |
 
 ## Solution retenue
 
-•	**Delta Lake** comme couche curated : ACID, schéma, contraintes et time travel.  
-•	**Règles métier** codées en nettoyage SQL/Spark puis renforcées par contraintes pour les ingestions futures.  
-•	**Partitionnement** aligné sur les filtres et groupements fréquents (pays / continent) pour réduire le scan des fichiers sur les requêtes de synthèse par pays.  
-•	**Merge + historique** pour simuler l’arrivée de nouvelles lignes et auditer l’impact sur les KPI.
+- **Medallion** bronze → silver → gold en Delta Lake (pipeline Python).
+- **Règles métier** dans `cleaning.py`, vérifiées par `checks.py` avant publication silver/gold.
+- **Delta Lake** dans le notebook pour ACID, contraintes, time travel et MERGE.
+- **Partitionnement** (pays / continent) pour réduire le scan sur les agrégations par pays.
 
-## Résultats obtenus (extraits du notebook)
+## Résultats obtenus (notebook — indicatifs)
 
-•	**Annulations** : environ 8 839 lignes commençant par `c` avant purge.  
-•	**Performance** : agrégation CA par pays — ~**2,45 s** sur `phase4` non partitionné vs ~1,55 s sur `sales_per_country_continent` partitionné (gain d’environ 0,90 s sur ce run).  
-•	**Ingestion** : 355 281 lignes insérées via `MERGE` 
-•	**Historique** : Utilisation de l'historique pour naviguer entre les versions.
-- **Comparaison de versions** : exemple de revenus globaux — `phase1` VERSION 0 ≈ 8 247 147,31 vs `phase4` VERSION 1 ≈ 7 724 629,47 (écarts attendus car périmètre et transformations diffèrent entre `phase1` initial et le jeu curé/enrichi `phase4`).  
+- **Annulations** : ~8 839 lignes avec `InvoiceNo` commençant par `c` avant purge.
+- **Performance** : CA par pays ~**2,45 s** (`phase4`) vs ~**0,90–1,55 s** (table partitionnée) selon le run.
+- **MERGE** : ~355 281 lignes insérées dans l’expérience notebook.
+- **Versions** : `phase1` v0 ≈ 8 247 147 £ vs `phase4` v1 ≈ 7 724 629 £ (périmètres différents après nettoyage / enrichissement).
 
-Les chiffres exacts peuvent varier selon la machine, l’ordre d’exécution et les caches Spark.
+Les chiffres varient selon la machine, le cache Spark et l’ordre d’exécution.
 
-## Prochaines étapes possibles
+## Évolutions possibles
 
-- Déployer le pipeline sur **Databricks** ou **Spark cluster** avec chemins cloud (S3 / ADLS) et politiques de vacuum / retention Delta.  
-- Uniformiser le stockage analytique autour de Delta Lake, avec partitionnement métier (éviter le sur-partitionnement sur les colonnes à forte cardinalité), OPTIMIZE, ZORDER, compaction et réduction des petits fichiers.  
-- Industrialiser : tests sur contraintes et volumétrie, scheduling (Airflow) et monitoring de la qualité (Great Expectations)
-    ingestion -> cleaning -> enrichment -> quality_checks -> publish
-
-- Étendre les analyses (RFM, cohortes, panier moyen temporel) et documenter les SLA de fraîcheur des données.
-
+- Déploiement **Databricks** / cluster avec `config/prod.yaml` (S3 / ADLS).
+- Compléter `tests/test_enrichment.py` et `great_expectations.py`.
+- Scheduling (**Airflow**), OPTIMIZE / ZORDER Delta, monitoring qualité.
+- MERGE et comparaisons d’historique intégrés au pipeline Python (au-delà du notebook).
+- Analyses RFM / cohortes (`src/analytics/rfm.py`).
