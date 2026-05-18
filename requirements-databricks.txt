@@ -1,4 +1,5 @@
-# À installer sur le cluster Databricks uniquement si besoin (Libraries > PyPI).
-# PySpark / delta-spark sont déjà présents sur les runtimes DBR avec Delta.
-
+# Bibliothèques Python sur cluster Databricks (Libraries) ou en local avec Connect.
 -r requirements.txt
+
+# Obligatoire sur DBR 15+ si SparkSession.builder est refusé (erreur Databricks Connect)
+databricks-connect>=15.4.0

@@ -21,7 +21,7 @@ from src.ingestion.write_data import write_delta
 from src.quality.checks import run_checks
 from src.transformations.cleaning import clean_transactions
 from src.transformations.enrichment import enrich_transactions
-from src.utils.config import get_config, is_databricks
+from src.utils.config import get_config, is_databricks_cluster
 from src.utils.logger import logger
 
 
@@ -46,7 +46,7 @@ def main() -> int:
 
     config = get_config(args.env)
     paths = config["paths"]
-    on_db = config["is_databricks"]
+    on_db_cluster = config["is_databricks"]
 
     logger.info("Runtime : %s | env=%s", config["runtime"], config["env"])
     logger.info("RAW    → %s", paths["raw"])
@@ -92,7 +92,7 @@ def main() -> int:
 
     finally:
         # Ne pas arrêter la session partagée du cluster Databricks
-        if spark is not None and not on_db:
+        if spark is not None and not on_db_cluster:
             spark.stop()
 
 
