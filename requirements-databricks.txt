@@ -1,0 +1,4 @@
+# À installer sur le cluster Databricks uniquement si besoin (Libraries > PyPI).
+# PySpark / delta-spark sont déjà présents sur les runtimes DBR avec Delta.
+
+-r requirements.txt

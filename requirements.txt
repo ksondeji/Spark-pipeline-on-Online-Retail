@@ -1,5 +1,6 @@
+# Dépendances communes (local + Databricks si installées sur le cluster)
 python-dotenv>=1.0.0
-pyspark==3.5.3
-delta-spark==3.2.1
 pyyaml>=6.0.2
-pytest>=8.3.4
+
+# Dépendances pour exécution LOCALE uniquement (pip install -r requirements-local.txt)
+# Sur Databricks : PySpark et Delta sont fournis par le runtime — ne pas les réinstaller.
