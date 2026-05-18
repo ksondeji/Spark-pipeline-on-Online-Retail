@@ -1,9 +1,13 @@
-# configs/dev.yaml
+# Exécution locale (python -m src.main ou --env dev)
+
+runtime: local
+
 paths:
   raw: "data/raw/Online_Retail.csv"
   bronze: "data/bronze"
   silver: "data/silver"
   gold: "data/gold"
+
 spark:
   app_name: "OnlineRetail-dev"
   master: "local[*]"

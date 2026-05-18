@@ -1,8 +1,13 @@
+# Cluster Spark managé (EMR, YARN, etc.) — pas Databricks
+
+runtime: cluster
+
 paths:
-  raw: "s3a://bucket/raw/Online_Retail.csv"
-  bronze: "s3a://bucket/bronze"
-  silver: "s3a://bucket/silver"
-  gold: "s3a://bucket/gold"
+  raw: "s3a://your-bucket/raw/Online_Retail.csv"
+  bronze: "s3a://your-bucket/bronze"
+  silver: "s3a://your-bucket/silver"
+  gold: "s3a://your-bucket/gold"
+
 spark:
   app_name: "OnlineRetail-prod"
   master: "yarn"

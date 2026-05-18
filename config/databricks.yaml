@@ -1,0 +1,13 @@
+# Configuration pour exécution sur cluster Databricks (job / notebook).
+# Adapter catalog, schema et volume à votre workspace Unity Catalog.
+
+runtime: databricks
+
+paths:
+  raw: "/Volumes/main/default/raw/Online_Retail.csv"
+  bronze: "/Volumes/main/default/bronze"
+  silver: "/Volumes/main/default/silver"
+  gold: "/Volumes/main/default/gold"
+
+spark:
+  app_name: "OnlineRetail-databricks"
