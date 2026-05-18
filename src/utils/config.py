@@ -12,9 +12,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REMOTE_PATH_PREFIXES = ("dbfs:", "abfss:", "s3://", "s3a://", "gs://", "/Volumes/")
 
 
-def is_databricks() -> bool:
-    """True si le code s'exécute sur un runtime Databricks."""
+def is_databricks_cluster() -> bool:
+    """True si le code s'exécute sur un worker/notebook Databricks (cluster)."""
     return "DATABRICKS_RUNTIME_VERSION" in os.environ
+
+
+def is_databricks() -> bool:
+    """Alias de is_databricks_cluster()."""
+    return is_databricks_cluster()
+
+
+def use_databricks_spark(config: dict[str, Any] | None = None) -> bool:
+    """True si la session doit être créée via l'API Databricks (cluster ou Connect)."""
+    if is_databricks_cluster():
+        return True
+    if config is None:
+        return os.getenv("ENV", "").lower() == "databricks"
+    return config.get("env") == "databricks" or config.get("runtime") == "databricks"
 
 
 def _load_dotenv_if_local() -> None:
@@ -79,7 +93,10 @@ def get_config(env: str | None = None) -> dict[str, Any]:
     return {
         "env": env_name,
         "runtime": file_cfg.get("runtime", "databricks" if is_databricks() else "local"),
-        "is_databricks": is_databricks(),
+        "is_databricks": is_databricks_cluster(),
+        "use_databricks_spark": use_databricks_spark(
+            {"env": env_name, "runtime": file_cfg.get("runtime")}
+        ),
         "project_root": str(PROJECT_ROOT),
         "paths": paths,
         "spark": {
