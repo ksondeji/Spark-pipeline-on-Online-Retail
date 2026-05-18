@@ -1,6 +1,12 @@
 """
 Orchestration du pipeline Online Retail (bronze → silver → gold).
-Lancement : python -m src.main [--env dev] [--analytics]
+
+Local :
+  python -m src.main [--env dev] [--analytics]
+
+Databricks (job ou notebook, repo attaché au cluster) :
+  python -m src.main --env databricks [--analytics]
+  # ou sans --env : détection auto (ENV=databricks)
 """
 
 from __future__ import annotations
@@ -10,12 +16,12 @@ import sys
 
 from src.analytics.runner import run_analytics
 from src.ingestion.read_data import read_raw_csv
-from src.ingestion.spark_session import create_spark_session
+from src.ingestion.spark_session import get_spark
 from src.ingestion.write_data import write_delta
 from src.quality.checks import run_checks
 from src.transformations.cleaning import clean_transactions
 from src.transformations.enrichment import enrich_transactions
-from src.utils.config import get_config
+from src.utils.config import get_config, is_databricks
 from src.utils.logger import logger
 
 
@@ -24,7 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--env",
         default=None,
-        help="Environnement de configuration (dev, prod). Défaut : ENV ou dev.",
+        help="Fichier config à charger : dev (local), databricks, prod (S3/cluster). "
+        "Sur Databricks, la valeur par défaut est 'databricks'.",
     )
     parser.add_argument(
         "--analytics",
@@ -37,52 +44,42 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    # 1. Configuration
     config = get_config(args.env)
     paths = config["paths"]
-    logger.info("Environnement : %s", config["env"])
-    logger.info("RAW  → %s", paths["raw"])
+    on_db = config["is_databricks"]
+
+    logger.info("Runtime : %s | env=%s", config["runtime"], config["env"])
+    logger.info("RAW    → %s", paths["raw"])
     logger.info("BRONZE → %s", paths["bronze"])
     logger.info("SILVER → %s", paths["silver"])
-    logger.info("GOLD → %s", paths["gold"])
+    logger.info("GOLD   → %s", paths["gold"])
 
     spark = None
     try:
-        # 2. SparkSession
-        spark = create_spark_session(config["spark"])
+        spark = get_spark(config)
 
-        # 3. Lecture CSV brut
         df_raw = read_raw_csv(spark, paths["raw"])
-        raw_count = df_raw.count()
-        logger.info("Lignes brutes ingérées : %s", raw_count)
+        logger.info("Lignes brutes ingérées : %s", df_raw.count())
 
-        # 4. Snapshot bronze
         write_delta(df_raw, paths["bronze"])
         logger.info("Bronze écrit : %s", paths["bronze"])
 
-        # 5. Nettoyage → silver (en mémoire)
         df_silver = clean_transactions(df_raw)
-        silver_count = df_silver.count()
-        logger.info("Lignes après nettoyage : %s", silver_count)
+        logger.info("Lignes après nettoyage : %s", df_silver.count())
 
-        # 6. Contrôles qualité (lève DataQualityError si violation)
         quality_report = run_checks(df_silver, scope="cleaning", raise_on_failure=True)
         logger.info("Contrôles silver OK (%s lignes)", quality_report["row_count"])
 
-        # 7. Persistance silver
         write_delta(df_silver, paths["silver"])
         logger.info("Silver écrit : %s", paths["silver"])
 
-        # 8. Enrichissement → gold
         df_gold = enrich_transactions(df_silver)
         gold_report = run_checks(df_gold, scope="enriched", raise_on_failure=True)
         logger.info("Contrôles gold OK (%s lignes)", gold_report["row_count"])
 
-        # 9. Persistance gold
         write_delta(df_gold, paths["gold"])
         logger.info("Gold écrit : %s", paths["gold"])
 
-        # 10. Analytics optionnelles
         if args.analytics:
             run_analytics(spark, paths["gold"])
 
@@ -94,7 +91,8 @@ def main() -> int:
         return 1
 
     finally:
-        if spark is not None:
+        # Ne pas arrêter la session partagée du cluster Databricks
+        if spark is not None and not on_db:
             spark.stop()
 
 
