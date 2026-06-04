@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
+from pyspark.sql.functions import col, length, lower
 
 
 class DataQualityError(Exception):
@@ -16,29 +17,32 @@ class DataQualityError(Exception):
         )
 
 
-# Expressions SQL : lignes qui violent la contrainte (alignées sur clean_transactions)
-CLEANING_CONSTRAINTS: list[tuple[str, str]] = [
-    ("customer_id_not_null", "CustomerID IS NULL"),
-    ("unit_price_not_null", "UnitPrice IS NULL"),
-    ("quantity_not_null", "Quantity IS NULL"),
-    ("invoice_no_not_null", "InvoiceNo IS NULL"),
-    ("invoice_not_cancelled", "lower(InvoiceNo) LIKE 'c%'"),
-    ("invoice_not_541431", "InvoiceNo = '541431'"),
-    ("stock_code_length_5", "length(StockCode) <> 5"),
+# Expressions Column (évite les casts SQL implicites sur Databricks Connect)
+CLEANING_CONSTRAINTS: list[tuple[str, Column]] = [
+    ("customer_id_not_null", col("CustomerID").isNull()),
+    ("unit_price_not_null", col("UnitPrice").isNull()),
+    ("quantity_not_null", col("Quantity").isNull()),
+    ("invoice_no_not_null", col("InvoiceNo").isNull()),
+    ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
+    ("invoice_not_541431", col("InvoiceNo") == "541431"),
+    ("stock_code_length_5", length(col("StockCode")) != 5),
+    ("quantity_positive", col("Quantity") <= 0),
+    ("unit_price_positive", col("UnitPrice") <= 0),
+    ("invoice_date_not_null", col("InvoiceDate").isNull()),
 ]
 
-ENRICHED_CONSTRAINTS: list[tuple[str, str]] = [
-    ("order_amount_positive", "OrderAmount <= 0"),
-    ("item_code_length_5", "length(ItemCode) <> 5"),
+ENRICHED_CONSTRAINTS: list[tuple[str, Column]] = [
+    ("order_amount_positive", col("OrderAmount") <= 0),
+    ("item_code_length_5", length(col("ItemCode")) != 5),
 ]
 
 
 def _evaluate_constraints(
-    df: DataFrame, constraints: list[tuple[str, str]]
+    df: DataFrame, constraints: list[tuple[str, Column]]
 ) -> list[dict[str, Any]]:
     results = []
-    for name, violation_sql in constraints:
-        violations = df.filter(violation_sql).count()
+    for name, violation_expr in constraints:
+        violations = df.filter(violation_expr).count()
         results.append(
             {
                 "name": name,
