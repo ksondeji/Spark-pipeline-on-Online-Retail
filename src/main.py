@@ -23,6 +23,7 @@ from src.transformations.cleaning import clean_transactions
 from src.transformations.enrichment import enrich_transactions
 from src.utils.config import get_config, is_databricks_cluster
 from src.utils.logger import logger
+from src.utils.schema_debug import inspect_dataframe_schema
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,6 +38,11 @@ def parse_args() -> argparse.Namespace:
         "--analytics",
         action="store_true",
         help="Lance les analyses et le benchmark de partitionnement après l'écriture gold.",
+    )
+    parser.add_argument(
+        "--debug-schema",
+        action="store_true",
+        help="Affiche schéma et échantillons après raw / silver / gold (diagnostic colonnes).",
     )
     return parser.parse_args()
 
@@ -60,13 +66,17 @@ def main() -> int:
 
         df_raw = read_raw_csv(spark, paths["raw"])
         logger.info("Lignes brutes ingérées : %s", df_raw.count())
+        if args.debug_schema:
+            inspect_dataframe_schema(df_raw, "raw (après lecture CSV)")
 
         write_delta(df_raw, paths["bronze"])
         logger.info("Bronze écrit : %s", paths["bronze"])
 
         df_silver = clean_transactions(df_raw)
         logger.info("Lignes après nettoyage : %s", df_silver.count())
-        
+        if args.debug_schema:
+            inspect_dataframe_schema(df_silver, "silver (après clean_transactions)")
+
         quality_report = run_checks(df_silver, scope="cleaning", raise_on_failure=True)
         logger.info("Contrôles silver OK (%s lignes)", quality_report["row_count"])
 
@@ -74,6 +84,9 @@ def main() -> int:
         logger.info("Silver écrit : %s", paths["silver"])
 
         df_gold = enrich_transactions(df_silver)
+        if args.debug_schema:
+            inspect_dataframe_schema(df_gold, "gold (après enrichissement)")
+
         gold_report = run_checks(df_gold, scope="enriched", raise_on_failure=True)
         logger.info("Contrôles gold OK (%s lignes)", gold_report["row_count"])
 
