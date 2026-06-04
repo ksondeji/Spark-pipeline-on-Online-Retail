@@ -1,5 +1,4 @@
-# Configuration pour exécution sur cluster Databricks (job / notebook).
-# Adapter catalog, schema et volume à votre workspace Unity Catalog.
+# Configuration Databricks — adapter catalog, volumes et cluster.
 
 runtime: databricks
 
@@ -11,3 +10,8 @@ paths:
 
 spark:
   app_name: "OnlineRetail-databricks"
+  # Obligatoire pour : python -m src.main (terminal / job hors notebook)
+  # Compute → votre cluster → URL : .../clusters/XXXXXXXX/...
+  cluster_id: ""   # ex. "0123-456789-abcdef"
+  # Ou true si vous utilisez Serverless (pas de cluster_id)
+  serverless: false
