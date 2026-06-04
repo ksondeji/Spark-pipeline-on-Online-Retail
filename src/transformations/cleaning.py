@@ -1,8 +1,7 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, length, lit, lower, to_timestamp
+from pyspark.sql.functions import col, expr, length, lit, lower, to_timestamp
 
 from src.utils.logger import logger
-from src.utils.spark_compat import try_cast
 
 _QUANTITY_PATTERN = r"^-?\d+$"
 _UNIT_PRICE_PATTERN = r"^-?\d+(\.\d+)?$"
@@ -28,10 +27,6 @@ def clean_transactions(df: DataFrame) -> DataFrame:
     unit_price_as_str = col("UnitPrice").cast("string")
     invoice_date_as_str = col("InvoiceDate").cast("string")
 
-    # try_cast plutôt que cast : tolère les valeurs aberrantes (Databricks ANSI)
-    qty = try_cast(col("Quantity"), "int")
-    price = try_cast(col("UnitPrice"), "double")
-
     return (
         _drop_corrupt_records(df)
         .filter(col("CustomerID").isNotNull())
@@ -45,8 +40,9 @@ def clean_transactions(df: DataFrame) -> DataFrame:
         .filter(unit_price_as_str.rlike(_UNIT_PRICE_PATTERN))
         .filter(~unit_price_as_str.rlike(r"[/:]"))
         .filter(invoice_date_as_str.rlike(_INVOICE_DATE_PATTERN))
-        .withColumn("Quantity", qty)
-        .withColumn("UnitPrice", price)
+        # SQL try_cast : null sur 'COFFEE' etc. (lignes CSV décalées)
+        .withColumn("Quantity", expr("try_cast(Quantity AS int)"))
+        .withColumn("UnitPrice", expr("try_cast(UnitPrice AS double)"))
         .withColumn(
             "InvoiceDate",
             to_timestamp(col("InvoiceDate"), "dd/MM/yyyy HH:mm:ss"),
