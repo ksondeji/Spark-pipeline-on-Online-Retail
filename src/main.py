@@ -4,9 +4,12 @@ Orchestration du pipeline Online Retail (bronze → silver → gold).
 Local :
   python -m src.main [--env dev] [--analytics]
 
-Databricks (job ou notebook, repo attaché au cluster) :
-  python -m src.main --env databricks [--analytics]
-  # ou sans --env : détection auto (ENV=databricks)
+Databricks notebook (repo attaché au cluster) :
+  from src.main import run_pipeline
+  run_pipeline(analytics=True)  # env auto → config/databricks.yaml
+
+Databricks (job / terminal) :
+  python -m src.main [--env databricks] [--analytics]
 """
 
 from __future__ import annotations
@@ -49,10 +52,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
+def run_pipeline(
+    env: str | None = None,
+    *,
+    analytics: bool = False,
+    debug_schema: bool = False,
+) -> int:
+    """
+    Point d'entrée pour notebook Databricks (évite argparse / sys.argv).
 
-    config = get_config(args.env)
+    Sur un cluster attaché, ``env`` peut être omis : détection auto → config/databricks.yaml.
+    La session ``spark`` du notebook est réutilisée (pas de cluster_id requis).
+    """
+    config = get_config(env)
     paths = config["paths"]
     on_db_cluster = config["is_databricks"]
 
@@ -78,7 +90,7 @@ def main() -> int:
             raw_count,
             corrupt_count,
         )
-        if args.debug_schema:
+        if debug_schema:
             inspect_dataframe_schema(df_raw, "raw (après lecture CSV)")
 
         write_delta(df_raw, paths["bronze"])
@@ -92,7 +104,7 @@ def main() -> int:
 
         # Relire depuis Delta : casse la lignée CSV (évite CAST_INVALID_INPUT dans checks)
         df_silver = read_delta(spark, paths["silver"])
-        if args.debug_schema:
+        if debug_schema:
             inspect_dataframe_schema(df_silver, "silver (Delta relu)")
 
         quality_report = run_checks(df_silver, scope="silver", raise_on_failure=True)
@@ -104,13 +116,13 @@ def main() -> int:
         logger.info("Gold écrit : %s", paths["gold"])
 
         df_gold = read_delta(spark, paths["gold"])
-        if args.debug_schema:
+        if debug_schema:
             inspect_dataframe_schema(df_gold, "gold (Delta relu)")
 
         gold_report = run_checks(df_gold, scope="enriched", raise_on_failure=True)
         logger.info("Contrôles gold OK (%s lignes)", gold_report["row_count"])
 
-        if args.analytics:
+        if analytics:
             run_analytics(spark, paths["gold"])
 
         logger.info("Pipeline terminé avec succès.")
@@ -124,6 +136,15 @@ def main() -> int:
         # Ne pas arrêter la session partagée du cluster Databricks
         if spark is not None and not on_db_cluster:
             spark.stop()
+
+
+def main() -> int:
+    args = parse_args()
+    return run_pipeline(
+        args.env,
+        analytics=args.analytics,
+        debug_schema=args.debug_schema,
+    )
 
 
 if __name__ == "__main__":
