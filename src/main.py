@@ -20,7 +20,7 @@ import sys
 from src.analytics.runner import run_analytics
 from src.ingestion.read_data import read_raw_csv
 from src.ingestion.spark_session import get_spark
-from src.ingestion.write_data import read_delta, write_delta
+from src.ingestion.write_data import drop_corrupt_column, read_delta, write_delta
 from src.quality.checks import run_checks
 from pyspark.sql.functions import col
 
@@ -93,7 +93,8 @@ def run_pipeline(
         if debug_schema:
             inspect_dataframe_schema(df_raw, "raw (après lecture CSV)")
 
-        write_delta(df_raw, paths["bronze"])
+        # Bronze : 8 colonnes métier (table Delta déjà créée sans _corrupt_record)
+        write_delta(drop_corrupt_column(df_raw), paths["bronze"])
         logger.info("Bronze écrit : %s", paths["bronze"])
 
         df_silver = clean_transactions(df_raw)
