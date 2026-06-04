@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, SparkSession
 
 _REMOTE_PREFIXES = ("s3://", "s3a://", "abfss://", "gs://", "dbfs:", "/Volumes/")
 
@@ -21,3 +21,8 @@ def write_delta(
     if partition_cols:
         writer = writer.partitionBy(*partition_cols)
     writer.save(path)
+
+
+def read_delta(spark: SparkSession, path: str) -> DataFrame:
+    """Relit une table Delta matérialisée (casse la lignée Spark issue du CSV)."""
+    return spark.read.format("delta").load(path)

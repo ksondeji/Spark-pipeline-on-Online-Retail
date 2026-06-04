@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from pyspark.sql import Column, DataFrame
-from pyspark.sql.functions import col, length, lit, lower, try_cast
+from pyspark.sql.functions import col, length, lower, try_cast
 
 
 class DataQualityError(Exception):
@@ -17,44 +17,33 @@ class DataQualityError(Exception):
         )
 
 
-def _non_positive(column: str, spark_type: str) -> Column:
-    """Violation sans cast strict (compatible Databricks ANSI / Connect)."""
-    typed = try_cast(col(column), spark_type)
-    zero = lit(0) if spark_type == "int" else lit(0.0)
-    return typed.isNull() | (typed <= zero)
-
-
-# Contrôles sur données BRUTES (string) — avant clean_transactions
+# Contrôles sur données BRUTES (string) — optionnel, avant nettoyage
 RAW_CONSTRAINTS: list[tuple[str, Column]] = [
     ("customer_id_not_null", col("CustomerID").isNull()),
-    ("unit_price_not_null", col("UnitPrice").isNull()),
-    ("quantity_not_null", col("Quantity").isNull()),
     ("invoice_no_not_null", col("InvoiceNo").isNull()),
     ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
     ("invoice_not_541431", col("InvoiceNo") == "541431"),
     ("stock_code_length_5", length(col("StockCode")) != 5),
 ]
 
-# Contrôles sur SILVER (après clean) — pas de comparaison numérique directe sur col()
+# Silver relu depuis Delta : uniquement colonnes string (évite CAST implicite Photon)
 SILVER_CONSTRAINTS: list[tuple[str, Column]] = [
     ("customer_id_not_null", col("CustomerID").isNull()),
-    ("unit_price_not_null", col("UnitPrice").isNull()),
-    ("quantity_not_null", col("Quantity").isNull()),
     ("invoice_no_not_null", col("InvoiceNo").isNull()),
-    ("invoice_date_not_null", col("InvoiceDate").isNull()),
     ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
     ("invoice_not_541431", col("InvoiceNo") == "541431"),
     ("stock_code_length_5", length(col("StockCode")) != 5),
-    ("quantity_positive", _non_positive("Quantity", "int")),
-    ("unit_price_positive", _non_positive("UnitPrice", "double")),
 ]
 
 ENRICHED_CONSTRAINTS: list[tuple[str, Column]] = [
-    ("order_amount_positive", _non_positive("OrderAmount", "double")),
     ("item_code_length_5", length(col("ItemCode")) != 5),
+    (
+        "order_amount_positive",
+        try_cast(col("OrderAmount"), "double").isNull()
+        | (try_cast(col("OrderAmount"), "double") <= 0),
+    ),
 ]
 
-# Rétrocompatibilité
 CLEANING_CONSTRAINTS = SILVER_CONSTRAINTS
 
 
@@ -83,9 +72,8 @@ def run_checks(
     """
     Vérifie les contraintes métier.
 
-    - ``raw`` : données CSV brutes (string)
-    - ``silver`` ou ``cleaning`` : après clean_transactions (types castés)
-    - ``enriched`` : couche gold
+    À utiliser sur un DataFrame relu depuis Delta (types stables).
+    Les contrôles numériques sont faits dans clean_transactions, pas ici sur silver.
     """
     if scope == "raw":
         constraints_def = RAW_CONSTRAINTS

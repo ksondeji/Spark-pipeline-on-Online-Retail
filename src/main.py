@@ -17,7 +17,7 @@ import sys
 from src.analytics.runner import run_analytics
 from src.ingestion.read_data import read_raw_csv
 from src.ingestion.spark_session import get_spark
-from src.ingestion.write_data import write_delta
+from src.ingestion.write_data import read_delta, write_delta
 from src.quality.checks import run_checks
 from src.transformations.cleaning import clean_transactions
 from src.transformations.enrichment import enrich_transactions
@@ -73,28 +73,30 @@ def main() -> int:
         logger.info("Bronze écrit : %s", paths["bronze"])
 
         df_silver = clean_transactions(df_raw)
-        # Matérialise le plan (évite que les checks relisent le CSV avec casts stricts)
-        df_silver = df_silver.cache()
-        silver_count = df_silver.count()
-        logger.info("Lignes après nettoyage : %s", silver_count)
-        if args.debug_schema:
-            inspect_dataframe_schema(df_silver, "silver (après clean_transactions)")
-
-        quality_report = run_checks(df_silver, scope="silver", raise_on_failure=True)
-        logger.info("Contrôles silver OK (%s lignes)", quality_report["row_count"])
+        logger.info("Lignes après nettoyage : %s", df_silver.count())
 
         write_delta(df_silver, paths["silver"])
         logger.info("Silver écrit : %s", paths["silver"])
 
-        df_gold = enrich_transactions(df_silver)
+        # Relire depuis Delta : casse la lignée CSV (évite CAST_INVALID_INPUT dans checks)
+        df_silver = read_delta(spark, paths["silver"])
         if args.debug_schema:
-            inspect_dataframe_schema(df_gold, "gold (après enrichissement)")
+            inspect_dataframe_schema(df_silver, "silver (Delta relu)")
 
-        gold_report = run_checks(df_gold, scope="enriched", raise_on_failure=True)
-        logger.info("Contrôles gold OK (%s lignes)", gold_report["row_count"])
+        quality_report = run_checks(df_silver, scope="silver", raise_on_failure=True)
+        logger.info("Contrôles silver OK (%s lignes)", quality_report["row_count"])
+
+        df_gold = enrich_transactions(df_silver)
 
         write_delta(df_gold, paths["gold"])
         logger.info("Gold écrit : %s", paths["gold"])
+
+        df_gold = read_delta(spark, paths["gold"])
+        if args.debug_schema:
+            inspect_dataframe_schema(df_gold, "gold (Delta relu)")
+
+        gold_report = run_checks(df_gold, scope="enriched", raise_on_failure=True)
+        logger.info("Contrôles gold OK (%s lignes)", gold_report["row_count"])
 
         if args.analytics:
             run_analytics(spark, paths["gold"])
