@@ -19,6 +19,8 @@ from src.ingestion.read_data import read_raw_csv
 from src.ingestion.spark_session import get_spark
 from src.ingestion.write_data import read_delta, write_delta
 from src.quality.checks import run_checks
+from pyspark.sql.functions import col
+
 from src.transformations.cleaning import clean_transactions
 from src.transformations.enrichment import enrich_transactions
 from src.utils.config import get_config, is_databricks_cluster
@@ -65,7 +67,17 @@ def main() -> int:
         spark = get_spark(config)
 
         df_raw = read_raw_csv(spark, paths["raw"])
-        logger.info("Lignes brutes ingérées : %s", df_raw.count())
+        raw_count = df_raw.count()
+        corrupt_count = (
+            df_raw.filter(col("_corrupt_record").isNotNull()).count()
+            if "_corrupt_record" in df_raw.columns
+            else 0
+        )
+        logger.info(
+            "Lignes brutes ingérées : %s (%s corrompues isolées)",
+            raw_count,
+            corrupt_count,
+        )
         if args.debug_schema:
             inspect_dataframe_schema(df_raw, "raw (après lecture CSV)")
 
