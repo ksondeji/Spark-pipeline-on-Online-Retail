@@ -108,5 +108,8 @@ def get_config(env: str | None = None) -> dict[str, Any]:
             "master": spark_cfg.get("master", "local[*]"),
             "driver_memory": spark_cfg.get("driver_memory", "4G"),
             "executor_memory": spark_cfg.get("executor_memory", "4G"),
+            "cluster_id": os.getenv("DATABRICKS_CLUSTER_ID")
+            or spark_cfg.get("cluster_id"),
+            "serverless": spark_cfg.get("serverless", False),
         },
     }
