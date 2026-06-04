@@ -73,11 +73,14 @@ def main() -> int:
         logger.info("Bronze écrit : %s", paths["bronze"])
 
         df_silver = clean_transactions(df_raw)
-        logger.info("Lignes après nettoyage : %s", df_silver.count())
+        # Matérialise le plan (évite que les checks relisent le CSV avec casts stricts)
+        df_silver = df_silver.cache()
+        silver_count = df_silver.count()
+        logger.info("Lignes après nettoyage : %s", silver_count)
         if args.debug_schema:
             inspect_dataframe_schema(df_silver, "silver (après clean_transactions)")
 
-        quality_report = run_checks(df_silver, scope="cleaning", raise_on_failure=True)
+        quality_report = run_checks(df_silver, scope="silver", raise_on_failure=True)
         logger.info("Contrôles silver OK (%s lignes)", quality_report["row_count"])
 
         write_delta(df_silver, paths["silver"])

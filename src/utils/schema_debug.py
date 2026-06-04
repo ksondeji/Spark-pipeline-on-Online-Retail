@@ -58,10 +58,12 @@ def inspect_dataframe_schema(df: DataFrame, label: str = "DataFrame") -> None:
     ]
     df.select(*cols).show(5, truncate=False)
 
-    if "Quantity" in df.columns:
-        _log_suspicious_quantities(df, label)
-    if "UnitPrice" in df.columns:
-        _log_suspicious_unit_prices(df, label)
+    # Diagnostic léger sur raw uniquement (évite des count() lourds en silver)
+    if "raw" in label.lower():
+        if "Quantity" in df.columns:
+            _log_suspicious_quantities(df, label)
+        if "UnitPrice" in df.columns:
+            _log_suspicious_unit_prices(df, label)
 
 
 def _log_suspicious_quantities(df: DataFrame, label: str) -> None:
@@ -70,7 +72,7 @@ def _log_suspicious_quantities(df: DataFrame, label: str) -> None:
         return
     as_string = col("Quantity").cast("string")
     suspicious = df.filter(~as_string.rlike(r"^-?\d+$"))
-    count = suspicious.count()
+    count = suspicious.limit(1000).count()
     if count > 0:
         logger.warning(
             "[%s] %s lignes avec Quantity non numérique (CSV probablement décalé)",
@@ -88,7 +90,7 @@ def _log_suspicious_unit_prices(df: DataFrame, label: str) -> None:
     """Détecte des UnitPrice qui ressemblent à des dates (mauvais alignement CSV)."""
     as_string = col("UnitPrice").cast("string")
     suspicious = df.filter(as_string.rlike(r"^\d{1,2}/\d{1,2}/\d{4}"))
-    count = suspicious.count()
+    count = suspicious.limit(1000).count()
     if count > 0:
         logger.warning(
             "[%s] %s lignes avec UnitPrice au format date (colonnes probablement décalées)",

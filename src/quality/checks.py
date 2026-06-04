@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from pyspark.sql import Column, DataFrame
-from pyspark.sql.functions import col, length, lower
+from pyspark.sql.functions import col, length, lit, lower, try_cast
 
 
 class DataQualityError(Exception):
@@ -17,8 +17,15 @@ class DataQualityError(Exception):
         )
 
 
-# Expressions Column (évite les casts SQL implicites sur Databricks Connect)
-CLEANING_CONSTRAINTS: list[tuple[str, Column]] = [
+def _non_positive(column: str, spark_type: str) -> Column:
+    """Violation sans cast strict (compatible Databricks ANSI / Connect)."""
+    typed = try_cast(col(column), spark_type)
+    zero = lit(0) if spark_type == "int" else lit(0.0)
+    return typed.isNull() | (typed <= zero)
+
+
+# Contrôles sur données BRUTES (string) — avant clean_transactions
+RAW_CONSTRAINTS: list[tuple[str, Column]] = [
     ("customer_id_not_null", col("CustomerID").isNull()),
     ("unit_price_not_null", col("UnitPrice").isNull()),
     ("quantity_not_null", col("Quantity").isNull()),
@@ -26,15 +33,29 @@ CLEANING_CONSTRAINTS: list[tuple[str, Column]] = [
     ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
     ("invoice_not_541431", col("InvoiceNo") == "541431"),
     ("stock_code_length_5", length(col("StockCode")) != 5),
-    ("quantity_positive", col("Quantity") <= 0),
-    ("unit_price_positive", col("UnitPrice") <= 0),
+]
+
+# Contrôles sur SILVER (après clean) — pas de comparaison numérique directe sur col()
+SILVER_CONSTRAINTS: list[tuple[str, Column]] = [
+    ("customer_id_not_null", col("CustomerID").isNull()),
+    ("unit_price_not_null", col("UnitPrice").isNull()),
+    ("quantity_not_null", col("Quantity").isNull()),
+    ("invoice_no_not_null", col("InvoiceNo").isNull()),
     ("invoice_date_not_null", col("InvoiceDate").isNull()),
+    ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
+    ("invoice_not_541431", col("InvoiceNo") == "541431"),
+    ("stock_code_length_5", length(col("StockCode")) != 5),
+    ("quantity_positive", _non_positive("Quantity", "int")),
+    ("unit_price_positive", _non_positive("UnitPrice", "double")),
 ]
 
 ENRICHED_CONSTRAINTS: list[tuple[str, Column]] = [
-    ("order_amount_positive", col("OrderAmount") <= 0),
+    ("order_amount_positive", _non_positive("OrderAmount", "double")),
     ("item_code_length_5", length(col("ItemCode")) != 5),
 ]
+
+# Rétrocompatibilité
+CLEANING_CONSTRAINTS = SILVER_CONSTRAINTS
 
 
 def _evaluate_constraints(
@@ -56,22 +77,24 @@ def _evaluate_constraints(
 def run_checks(
     df: DataFrame,
     *,
-    scope: str = "cleaning",
+    scope: str = "silver",
     raise_on_failure: bool = True,
 ) -> dict[str, Any]:
     """
-    Vérifie les contraintes alignées sur clean_transactions (scope='cleaning')
-    ou sur les tables enrichies (scope='enriched').
+    Vérifie les contraintes métier.
 
-    Retourne un rapport structuré. Si raise_on_failure=True et qu'une contrainte
-    échoue, lève DataQualityError avec le rapport en attribut .report.
+    - ``raw`` : données CSV brutes (string)
+    - ``silver`` ou ``cleaning`` : après clean_transactions (types castés)
+    - ``enriched`` : couche gold
     """
-    if scope == "cleaning":
-        constraints_def = CLEANING_CONSTRAINTS
+    if scope == "raw":
+        constraints_def = RAW_CONSTRAINTS
+    elif scope in ("cleaning", "silver"):
+        constraints_def = SILVER_CONSTRAINTS
     elif scope == "enriched":
         constraints_def = ENRICHED_CONSTRAINTS
     else:
-        raise ValueError("scope doit être 'cleaning' ou 'enriched'")
+        raise ValueError("scope doit être 'raw', 'silver', 'cleaning' ou 'enriched'")
 
     constraint_results = _evaluate_constraints(df, constraints_def)
     report: dict[str, Any] = {
