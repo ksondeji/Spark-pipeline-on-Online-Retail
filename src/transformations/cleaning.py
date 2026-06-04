@@ -1,7 +1,8 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, length, lit, lower, to_timestamp, try_cast
+from pyspark.sql.functions import col, length, lit, lower, to_timestamp
 
 from src.utils.logger import logger
+from src.utils.spark_compat import try_cast
 
 _QUANTITY_PATTERN = r"^-?\d+$"
 _UNIT_PRICE_PATTERN = r"^-?\d+(\.\d+)?$"

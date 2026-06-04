@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from pyspark.sql import Column, DataFrame
-from pyspark.sql.functions import col, length, lower, try_cast
+from pyspark.sql.functions import col, length, lower
 
 
 class DataQualityError(Exception):
@@ -39,8 +39,7 @@ ENRICHED_CONSTRAINTS: list[tuple[str, Column]] = [
     ("item_code_length_5", length(col("ItemCode")) != 5),
     (
         "order_amount_positive",
-        try_cast(col("OrderAmount"), "double").isNull()
-        | (try_cast(col("OrderAmount"), "double") <= 0),
+        col("OrderAmount").isNull() | (col("OrderAmount") <= 0),
     ),
 ]
 
