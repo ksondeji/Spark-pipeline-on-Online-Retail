@@ -1,13 +1,15 @@
 # continent ; segmentation ; catégories produits ; shopsize
-from pyspark.sql.functions import col, when, lower
+from pyspark.sql.functions import col, lower, try_cast, when
 
 def enrich_transactions(df):
     return (
         df.withColumnRenamed("StockCode", "ItemCode")
         .withColumn("desc_clean", lower(col("Description")))
         .withColumn("OrderAmount", col("Quantity") * col("UnitPrice"))
-        .withColumn("Purchase_segment", when(col("CustomerID").cast("int") < 10000, "High_spender")
-        .when(col("CustomerID").cast("int") < 20000, "Medium_spender")
+        .withColumn(
+            "Purchase_segment",
+            when(try_cast(col("CustomerID"), "int") < 10000, "High_spender")
+            .when(try_cast(col("CustomerID"), "int") < 20000, "Medium_spender")
         .otherwise("Low_spender"))
         .withColumn("Shopsize", when(col("Country") == "United Kingdom", "Large")
         .when(col("Country") == "France", "Medium")

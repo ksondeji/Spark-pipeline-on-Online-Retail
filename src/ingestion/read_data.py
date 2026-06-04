@@ -25,6 +25,10 @@ def read_raw_csv(spark: SparkSession, path: str) -> DataFrame:
     """Lit le CSV brut Online Retail avec un schéma explicite."""
     return (
         spark.read.option("header", True)
+        .option("mode", "PERMISSIVE")
+        .option("quote", '"')
+        .option("escape", '"')
+        .option("encoding", "UTF-8")
         .schema(ONLINE_RETAIL_SCHEMA)
         .csv(path)
     )

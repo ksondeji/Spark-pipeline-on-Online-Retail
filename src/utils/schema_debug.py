@@ -58,8 +58,30 @@ def inspect_dataframe_schema(df: DataFrame, label: str = "DataFrame") -> None:
     ]
     df.select(*cols).show(5, truncate=False)
 
+    if "Quantity" in df.columns:
+        _log_suspicious_quantities(df, label)
     if "UnitPrice" in df.columns:
         _log_suspicious_unit_prices(df, label)
+
+
+def _log_suspicious_quantities(df: DataFrame, label: str) -> None:
+    """Détecte du texte (ex. METAL SIGN) dans Quantity avant cast."""
+    if "Quantity" not in df.columns:
+        return
+    as_string = col("Quantity").cast("string")
+    suspicious = df.filter(~as_string.rlike(r"^-?\d+$"))
+    count = suspicious.count()
+    if count > 0:
+        logger.warning(
+            "[%s] %s lignes avec Quantity non numérique (CSV probablement décalé)",
+            label,
+            count,
+        )
+        suspicious.select(
+            "InvoiceNo", "StockCode", "Description", "Quantity", "UnitPrice"
+        ).show(5, truncate=False)
+    else:
+        logger.info("[%s] Quantity : format numérique OK.", label)
 
 
 def _log_suspicious_unit_prices(df: DataFrame, label: str) -> None:
