@@ -20,5 +20,6 @@ paths:
 
 spark:
   app_name: "OnlineRetail-databricks"
+  # Compte étudiant / sans cluster : laisser cluster_id vide, serverless: true
   cluster_id: ""
-  serverless: false
+  serverless: true

@@ -57,7 +57,7 @@ def run_pipeline(
     *,
     analytics: bool = False,
     debug_schema: bool = False,
-) -> int:
+    ) -> int:
     """
     Point d'entrée pour notebook Databricks (évite argparse / sys.argv).
 
