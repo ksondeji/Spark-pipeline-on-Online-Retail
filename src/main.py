@@ -66,8 +66,6 @@ def main() -> int:
 
         df_silver = clean_transactions(df_raw)
         logger.info("Lignes après nettoyage : %s", df_silver.count())
-        df_silver.printSchema()
-        df_silver.show(3, truncate=False)
         
         quality_report = run_checks(df_silver, scope="cleaning", raise_on_failure=True)
         logger.info("Contrôles silver OK (%s lignes)", quality_report["row_count"])
