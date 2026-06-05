@@ -1,7 +1,8 @@
 """
 Enregistrement des tables Delta nommées comme dans le notebook d'origine (phase1…phase4).
 
-Sur Databricks Unity Catalog : tables gérées sous ``{catalog}.{schema}.phase*``.
+Comptes étudiants Databricks : tables **gérées** UC via ``saveAsTable`` (pas de LOCATION
+sur Volume, qui provoque ``Missing cloud file system scheme``).
 """
 
 from __future__ import annotations
@@ -28,8 +29,8 @@ def full_table_name(catalog: str, schema: str, name: str) -> str:
     return f"{catalog}.{schema}.{name}"
 
 
-def _table_path(base: str, name: str) -> str:
-    return f"{base.rstrip('/')}/{name}"
+def _ensure_schema(spark: SparkSession, catalog: str, schema: str) -> None:
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
 
 
 def _delta_versions(spark: SparkSession, table_fqn: str) -> list[int]:
@@ -37,32 +38,31 @@ def _delta_versions(spark: SparkSession, table_fqn: str) -> list[int]:
     return sorted({int(r["version"]) for r in rows})
 
 
-def register_external_delta_table(
-    spark: SparkSession,
+def _save_managed_table(
+    df: DataFrame,
     catalog: str,
     schema: str,
     name: str,
-    path: str,
+    *,
+    partition_cols: list[str] | None = None,
 ) -> str:
-    """Crée ou met à jour une table UC pointant vers un emplacement Delta existant."""
+    """Écrit une table Delta gérée dans Unity Catalog (compatible compte étudiant)."""
+    _ensure_schema(df.sparkSession, catalog, schema)
     fqn = full_table_name(catalog, schema, name)
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
     spark.sql(f"DROP TABLE IF EXISTS {fqn}")
-    spark.sql(
-        f"""
-        CREATE TABLE {fqn}
-        USING DELTA
-        LOCATION '{path}'
-        """
-    )
-    logger.info("Table enregistrée : %s → %s", fqn, path)
+
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_cols:
+        writer = writer.partitionBy(*partition_cols)
+    writer.saveAsTable(fqn)
+
+    logger.info("Table gérée créée : %s", fqn)
     return fqn
 
 
 def materialize_phase1(
     spark: SparkSession,
     silver_path: str,
-    phase1_path: str,
     catalog: str,
     schema: str,
 ) -> str:
@@ -72,31 +72,23 @@ def materialize_phase1(
         .load(silver_path)
         .withColumn("OrderAmount", col("Quantity") * col("UnitPrice"))
     )
-    phase1_df.write.format("delta").mode("overwrite").save(phase1_path)
-    return register_external_delta_table(
-        spark, catalog, schema, "phase1", phase1_path
-    )
+    return _save_managed_table(phase1_df, catalog, schema, "phase1")
 
 
 def materialize_phase_from_gold(
     spark: SparkSession,
     gold_path: str,
-    target_path: str,
     catalog: str,
     schema: str,
     table_name: str,
 ) -> str:
     gold_df = spark.read.format("delta").load(gold_path)
-    gold_df.write.format("delta").mode("overwrite").save(target_path)
-    return register_external_delta_table(
-        spark, catalog, schema, table_name, target_path
-    )
+    return _save_managed_table(gold_df, catalog, schema, table_name)
 
 
 def ensure_phase4_merge_history(
     spark: SparkSession,
     gold_path: str,
-    phase4_path: str,
     catalog: str,
     schema: str,
     *,
@@ -115,17 +107,8 @@ def ensure_phase4_merge_history(
     seed = ranked.filter(col("_rn") <= seed_rows).drop("_rn")
     rest = ranked.filter(col("_rn") > seed_rows).drop("_rn")
 
-    seed.write.format("delta").mode("overwrite").save(phase4_path)
-    register_external_delta_table(spark, catalog, schema, "phase4", phase4_path)
-
-    rest.createOrReplaceTempView("df_rest_phase5")
-    merge_fqn = full_table_name(catalog, schema, "df_rest_phase5")
-    spark.sql(f"DROP TABLE IF EXISTS {merge_fqn}")
-    (
-        rest.write.format("delta")
-        .mode("overwrite")
-        .saveAsTable(merge_fqn)
-    )
+    _save_managed_table(seed, catalog, schema, "phase4")
+    merge_fqn = _save_managed_table(rest, catalog, schema, "df_rest_phase5")
 
     spark.sql(
         f"""
@@ -146,40 +129,23 @@ def ensure_phase4_merge_history(
     return phase4_fqn
 
 
-def register_phase4_from_gold_if_exists(
-    spark: SparkSession,
-    gold_path: str,
-    phase4_path: str,
-    catalog: str,
-    schema: str,
-) -> str:
-    """Enregistre phase4 depuis gold sans recréer l'historique MERGE."""
-    return materialize_phase_from_gold(
-        spark, gold_path, phase4_path, catalog, schema, "phase4"
-    )
-
-
 def create_partitioned_analytics_tables(
     spark: SparkSession,
     phase4_fqn: str,
     catalog: str,
     schema: str,
 ) -> list[str]:
-    """Tables partitionnées du notebook (format Delta sur UC)."""
+    """Tables partitionnées du notebook (Delta géré, partitionné)."""
+    phase4_df = spark.table(phase4_fqn)
     created: list[str] = []
     for table_name, partition_cols in _PARTITIONED_TABLES:
-        fqn = full_table_name(catalog, schema, table_name)
-        cols = ", ".join(partition_cols)
-        spark.sql(f"DROP TABLE IF EXISTS {fqn}")
-        spark.sql(
-            f"""
-            CREATE TABLE {fqn}
-            USING DELTA
-            PARTITIONED BY ({cols})
-            AS SELECT * FROM {phase4_fqn}
-            """
+        fqn = _save_managed_table(
+            phase4_df,
+            catalog,
+            schema,
+            table_name,
+            partition_cols=partition_cols,
         )
-        logger.info("Table partitionnée : %s BY (%s)", fqn, cols)
         created.append(fqn)
     return created
 
@@ -199,42 +165,27 @@ def register_notebook_tables(
     """
     catalog = tables_cfg.get("catalog", "main")
     schema = tables_cfg.get("schema", "default")
-    base = tables_cfg["base"]
-
-    phase1_path = _table_path(base, "phase1")
-    phase2_path = _table_path(base, "phase2")
-    phase3_path = _table_path(base, "phase3")
-    phase4_path = _table_path(base, "phase4")
+    _ensure_schema(spark, catalog, schema)
 
     registered: dict[str, str] = {}
 
     registered["phase1"] = materialize_phase1(
-        spark, paths["silver"], phase1_path, catalog, schema
+        spark, paths["silver"], catalog, schema
     )
-    # phase2 notebook ≈ phase1 + OrderAmount (avant enrichissements lourds)
-    (
-        spark.read.format("delta")
-        .load(phase1_path)
-        .write.format("delta")
-        .mode("overwrite")
-        .save(phase2_path)
+    registered["phase2"] = _save_managed_table(
+        spark.table(registered["phase1"]),
+        catalog,
+        schema,
+        "phase2",
     )
-    registered["phase2"] = register_external_delta_table(
-        spark, catalog, schema, "phase2", phase2_path
-    )
-
     registered["phase3"] = materialize_phase_from_gold(
-        spark, paths["gold"], phase3_path, catalog, schema, "phase3"
+        spark, paths["gold"], catalog, schema, "phase3"
     )
 
     phase4_fqn = full_table_name(catalog, schema, "phase4")
     if simulate_phase4_merge:
         registered["phase4"] = ensure_phase4_merge_history(
-            spark,
-            paths["gold"],
-            phase4_path,
-            catalog,
-            schema,
+            spark, paths["gold"], catalog, schema
         )
     else:
         existing_versions: list[int] = []
@@ -246,8 +197,8 @@ def register_notebook_tables(
             registered["phase4"] = phase4_fqn
             logger.info("phase4 existante conservée (versions %s)", existing_versions)
         else:
-            registered["phase4"] = register_phase4_from_gold_if_exists(
-                spark, paths["gold"], phase4_path, catalog, schema
+            registered["phase4"] = materialize_phase_from_gold(
+                spark, paths["gold"], catalog, schema, "phase4"
             )
 
     create_partitioned_analytics_tables(
