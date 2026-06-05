@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from src.analytics.runner import run_analytics
+from src.analytics.runner import run_full_analytics_report
 from src.ingestion.read_data import read_raw_csv
 from src.ingestion.spark_session import get_spark
 from src.ingestion.write_data import drop_corrupt_column, read_delta, write_delta
@@ -124,7 +124,7 @@ def run_pipeline(
         logger.info("Contrôles gold OK (%s lignes)", gold_report["row_count"])
 
         if analytics:
-            run_analytics(spark, paths["gold"])
+            run_full_analytics_report(spark, config)
 
         logger.info("Pipeline terminé avec succès.")
         return 0

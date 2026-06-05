@@ -93,6 +93,11 @@ def get_config(env: str | None = None) -> dict[str, Any]:
     if missing:
         raise ValueError(f"Chemins manquants dans la configuration : {', '.join(missing)}")
 
+    tables_cfg = file_cfg.get("tables") or {}
+    tables_base = tables_cfg.get("base")
+    if not tables_base:
+        tables_base = str(Path(paths["gold"]).parent / "tables")
+
     spark_cfg = file_cfg.get("spark") or {}
     return {
         "env": env_name,
@@ -103,6 +108,11 @@ def get_config(env: str | None = None) -> dict[str, Any]:
         ),
         "project_root": str(PROJECT_ROOT),
         "paths": paths,
+        "tables": {
+            "catalog": tables_cfg.get("catalog", "main"),
+            "schema": tables_cfg.get("schema", "default"),
+            "base": _resolve_path(tables_base),
+        },
         "spark": {
             "app_name": spark_cfg.get("app_name", "OnlineRetail-pipeline"),
             "master": spark_cfg.get("master", "local[*]"),
