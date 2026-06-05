@@ -151,12 +151,16 @@ python -m pytest tests/test_cleaning.py tests/test_quality.py -q
 
 Le premier lancement peut être lent (démarrage JVM Spark).
 
-### Notebook (Colab / Jupyter)
+### Exécution depuis un Notebook 
+
+A. Google Colab
 
 1. Ouvrir `Online_retail_pipeline.ipynb` et exécuter les cellules dans l’ordre.
 2. Adapter le chemin CSV si besoin (historiquement `/Data_OR/Online_Retail.csv`).
 
-> **Windows :** `spark_session.py` configure automatiquement `PYSPARK_PYTHON`, corrige un `JAVA_HOME` invalide et prépare `HADOOP_HOME` + `winutils.exe` si nécessaire.
+B. Databricks
+
+1. Aller dans le dossier `notebooks` -> Ouvrir `Run pipeline.ipynb` -> exécuter les cellules dans l’ordre.
 
 ## Présentation de la base de données
 
