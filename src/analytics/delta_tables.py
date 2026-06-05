@@ -47,9 +47,10 @@ def _save_managed_table(
     partition_cols: list[str] | None = None,
 ) -> str:
     """Écrit une table Delta gérée dans Unity Catalog (compatible compte étudiant)."""
-    _ensure_schema(df.sparkSession, catalog, schema)
+    session = df.sparkSession
+    _ensure_schema(session, catalog, schema)
     fqn = full_table_name(catalog, schema, name)
-    spark.sql(f"DROP TABLE IF EXISTS {fqn}")
+    session.sql(f"DROP TABLE IF EXISTS {fqn}")
 
     writer = df.write.format("delta").mode("overwrite")
     if partition_cols:
