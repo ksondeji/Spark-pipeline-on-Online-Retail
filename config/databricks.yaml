@@ -18,6 +18,12 @@ paths:
   silver: "/Volumes/main/default/raw/silver"
   gold: "/Volumes/main/default/raw/gold"
 
+# Tables Unity Catalog
+tables:
+  catalog: main
+  schema: default
+  base: "/Volumes/main/default/raw/tables"
+
 spark:
   app_name: "OnlineRetail-databricks"
   # Compte étudiant / sans cluster : laisser cluster_id vide, serverless: true
