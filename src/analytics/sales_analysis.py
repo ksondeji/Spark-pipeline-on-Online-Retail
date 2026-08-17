@@ -46,7 +46,7 @@ def get_mean_spend_by_segment(spark: SparkSession, path: str) -> DataFrame:
 def get_top_category_for_big_customer(spark: SparkSession, path: str) -> DataFrame:
     return (
         _read_gold(spark, path)
-        .filter(col("Purchase_segment") == "High_spender")
+        .filter(col("High_spender") == True)  # noqa: E712
         .groupBy("product_category")
         .agg(count("*").alias("number_of_purchase"))
         .orderBy(col("number_of_purchase").desc())
