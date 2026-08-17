@@ -1,6 +1,15 @@
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, count, mean, sum
+from pyspark.sql.functions import col, count, lit, mean, sum
 from pyspark.sql.window import Window
+
+
+def _cumulative_revenue_window() -> Window:
+    """Fenêtre globale explicite (évite « No Partition Defined ») + cumul ordonné."""
+    return (
+        Window.partitionBy(lit(1))
+        .orderBy(col("total_revenue").desc())
+        .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+    )
 
 
 def _read_gold(spark: SparkSession, path: str) -> DataFrame:
@@ -64,24 +73,24 @@ def get_sales_by_country_continent(spark: SparkSession, path: str) -> DataFrame:
 
 
 def get_cumulative_contribution_by_country(spark: SparkSession, path: str) -> DataFrame:
-    window = Window.orderBy(col("total_revenue").desc())
+    window = _cumulative_revenue_window()
     return (
         _read_gold(spark, path)
         .groupBy("Country")
         .agg(sum("OrderAmount").alias("total_revenue"))
-        .orderBy(col("total_revenue").desc())
         .withColumn("cumulative_contribution", sum("total_revenue").over(window))
+        .orderBy(col("total_revenue").desc())
     )
 
 
 def get_cumulative_contribution_by_customer_id(
     spark: SparkSession, path: str
 ) -> DataFrame:
-    window = Window.orderBy(col("total_revenue").desc())
+    window = _cumulative_revenue_window()
     return (
         _read_gold(spark, path)
         .groupBy("CustomerID")
         .agg(sum("OrderAmount").alias("total_revenue"))
-        .orderBy(col("total_revenue").desc())
         .withColumn("cumulative_contribution", sum("total_revenue").over(window))
+        .orderBy(col("total_revenue").desc())
     )

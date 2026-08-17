@@ -10,8 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, row_number
-from pyspark.sql.window import Window
+from pyspark.sql.functions import col
 
 from src.utils.logger import logger
 
@@ -103,10 +102,10 @@ def ensure_phase4_merge_history(
     phase4_fqn = full_table_name(catalog, schema, "phase4")
     gold_df = spark.read.format("delta").load(gold_path)
 
-    window = Window.orderBy("InvoiceNo", "ItemCode", "CustomerID")
-    ranked = gold_df.withColumn("_rn", row_number().over(window))
-    seed = ranked.filter(col("_rn") <= seed_rows).drop("_rn")
-    rest = ranked.filter(col("_rn") > seed_rows).drop("_rn")
+    merge_keys = ["InvoiceNo", "ItemCode", "CustomerID"]
+    ordered = gold_df.orderBy(*merge_keys)
+    seed = ordered.limit(seed_rows)
+    rest = gold_df.join(seed.select(*merge_keys), on=merge_keys, how="left_anti")
 
     _save_managed_table(seed, catalog, schema, "phase4")
     merge_fqn = _save_managed_table(rest, catalog, schema, "df_rest_phase5")
