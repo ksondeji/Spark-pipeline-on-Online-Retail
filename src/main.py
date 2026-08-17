@@ -113,7 +113,8 @@ def run_pipeline(
 
         df_gold = enrich_transactions(df_silver)
 
-        write_delta(df_gold, paths["gold"])
+        # overwriteSchema : gold existante sans High_spender → évite DELTA_METADATA_MISMATCH
+        write_delta(df_gold, paths["gold"], overwrite_schema=True)
         logger.info("Gold écrit : %s", paths["gold"])
 
         df_gold = read_delta(spark, paths["gold"])
