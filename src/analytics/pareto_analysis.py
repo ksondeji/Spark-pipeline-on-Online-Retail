@@ -14,7 +14,7 @@ def get_customer_pareto(spark, gold_path):
     df = spark.read.format("delta").load(gold_path)
     by_customer = (
         df.groupBy("CustomerID")
-          .agg(F.sum(F.col("Quantity") * F.col("UnitPrice")).alias("total_revenue"))
+          .agg(F.round(F.sum(F.col("Quantity") * F.col("UnitPrice")), 2).alias("total_revenue"))
     )
     result = _cumulative_contribution(by_customer, "CustomerID")
 
@@ -29,7 +29,7 @@ def get_product_pareto(spark, gold_path):
     df = spark.read.format("delta").load(gold_path)
     by_product = (
         df.groupBy("ItemCode", "Description")
-          .agg(F.sum(F.col("Quantity") * F.col("UnitPrice")).alias("total_revenue"))
+          .agg(F.round(F.sum(F.col("Quantity") * F.col("UnitPrice")), 2).alias("total_revenue"))
     )
     return _cumulative_contribution(by_product, "ItemCode")
 
@@ -38,7 +38,7 @@ def get_top_products(spark, gold_path, n=15):
     df = spark.read.format("delta").load(gold_path)
     by_revenue = (
         df.groupBy("ItemCode", "Description")
-          .agg(F.sum(F.col("Quantity") * F.col("UnitPrice")).alias("total_revenue"))
+          .agg(F.round(F.sum(F.col("Quantity") * F.col("UnitPrice")), 2).alias("total_revenue"))
           .orderBy(F.desc("total_revenue"))
           .limit(n)
     )
