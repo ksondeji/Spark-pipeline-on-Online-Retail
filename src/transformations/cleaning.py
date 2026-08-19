@@ -1,5 +1,5 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, expr, length, lit, lower, to_timestamp
+from pyspark.sql.functions import col, expr, length, lit, lower
 
 from src.utils.logger import logger
 
@@ -45,7 +45,7 @@ def clean_transactions(df: DataFrame) -> DataFrame:
         .withColumn("UnitPrice", expr("try_cast(UnitPrice AS double)"))
         .withColumn(
             "InvoiceDate",
-            to_timestamp(col("InvoiceDate"), "dd/MM/yyyy HH:mm:ss"),
+            expr("try_to_timestamp(CAST(InvoiceDate AS STRING), 'dd/MM/yyyy HH:mm:ss')"),
         )
         .filter(col("Quantity").isNotNull())
         .filter(col("UnitPrice").isNotNull())

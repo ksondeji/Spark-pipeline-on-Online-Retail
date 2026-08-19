@@ -12,71 +12,75 @@ from src.transformations.cleaning import (
 )
 
 
+def _violation(condition: F.Column) -> F.Column:
+    return F.when(condition, 1).otherwise(0)
+
+
 def get_rejection_breakdown(spark: SparkSession, bronze_path: str) -> dict[str, int]:
     """
     Compte combien de lignes chaque règle de ``clean_transactions`` rejette.
 
     Chaque compteur est **indépendant** (calculé sur tout le bronze) : les totaux
-    peuvent se chevaucher d'une ligne à l'autre.
+    peuvent se chevaucher. Aucun ``to_timestamp`` / ``try_to_timestamp`` ici :
+    sur bronze string, le parse strict Databricks lève encore SQLSTATE 22007.
     """
     df = spark.read.format("delta").load(bronze_path)
-    total = df.count()
 
     qty_str = F.col("Quantity").cast("string")
     price_str = F.col("UnitPrice").cast("string")
     date_str = F.col("InvoiceDate").cast("string")
     qty_int = F.expr("try_cast(Quantity AS int)")
     price_dbl = F.expr("try_cast(UnitPrice AS double)")
-    inv_ts = F.expr("try_to_timestamp(InvoiceDate, 'dd/MM/yyyy HH:mm:ss')")
 
-    duplicate_groups = (
+    agg_exprs = [
+        F.count(F.lit(1)).alias("Total bronze"),
+        F.sum(_violation(F.col("CustomerID").isNull())).alias("CustomerID null"),
+        F.sum(_violation(F.col("UnitPrice").isNull())).alias("UnitPrice null"),
+        F.sum(_violation(F.col("Quantity").isNull())).alias("Quantity null"),
+        F.sum(_violation(F.col("InvoiceNo").isNull())).alias("InvoiceNo null"),
+        F.sum(_violation(F.lower(F.col("InvoiceNo")).startswith("c"))).alias(
+            "Annulation (InvoiceNo c*)"
+        ),
+        F.sum(_violation(F.col("InvoiceNo") == "541431")).alias("InvoiceNo 541431"),
+        F.sum(_violation(F.length(F.col("StockCode")) != 5)).alias(
+            "StockCode longueur != 5"
+        ),
+        F.sum(_violation(~qty_str.rlike(_QUANTITY_PATTERN))).alias(
+            "Quantity format invalide"
+        ),
+        F.sum(_violation(~price_str.rlike(_UNIT_PRICE_PATTERN))).alias(
+            "UnitPrice format invalide"
+        ),
+        F.sum(_violation(price_str.rlike(r"[/:]"))).alias("UnitPrice contient / ou :"),
+        F.sum(_violation(~date_str.rlike(_INVOICE_DATE_PATTERN))).alias(
+            "InvoiceDate format invalide"
+        ),
+        F.sum(_violation(qty_int.isNull())).alias("Quantity non castable (int)"),
+        F.sum(_violation(price_dbl.isNull())).alias("UnitPrice non castable (double)"),
+        F.sum(_violation(qty_int.isNotNull() & (qty_int <= 0))).alias(
+            "Quantity <= 0 (après cast)"
+        ),
+        F.sum(_violation(price_dbl.isNotNull() & (price_dbl <= 0))).alias(
+            "UnitPrice <= 0 (après cast)"
+        ),
+    ]
+
+    if "_corrupt_record" in df.columns:
+        agg_exprs.insert(
+            1,
+            F.sum(_violation(F.col("_corrupt_record").isNotNull())).alias(
+                "_corrupt_record non null"
+            ),
+        )
+
+    row = df.agg(*agg_exprs).first()
+    breakdown = {field: int(row[field]) for field in row.asDict()}
+
+    breakdown["Doublons (InvoiceNo+StockCode)"] = (
         df.groupBy("InvoiceNo", "StockCode")
         .count()
         .filter(F.col("count") > 1)
         .count()
-    )
-
-    breakdown: dict[str, int] = {
-        "Total bronze": total,
-    }
-
-    if "_corrupt_record" in df.columns:
-        breakdown["_corrupt_record non null"] = df.filter(
-            F.col("_corrupt_record").isNotNull()
-        ).count()
-
-    breakdown.update(
-        {
-            "CustomerID null": df.filter(F.col("CustomerID").isNull()).count(),
-            "UnitPrice null": df.filter(F.col("UnitPrice").isNull()).count(),
-            "Quantity null": df.filter(F.col("Quantity").isNull()).count(),
-            "InvoiceNo null": df.filter(F.col("InvoiceNo").isNull()).count(),
-            "Annulation (InvoiceNo c*)": df.filter(
-                F.lower(F.col("InvoiceNo")).startswith("c")
-            ).count(),
-            "InvoiceNo 541431": df.filter(F.col("InvoiceNo") == "541431").count(),
-            "StockCode longueur != 5": df.filter(F.length(F.col("StockCode")) != 5).count(),
-            "Quantity format invalide": df.filter(~qty_str.rlike(_QUANTITY_PATTERN)).count(),
-            "UnitPrice format invalide": df.filter(
-                ~price_str.rlike(_UNIT_PRICE_PATTERN)
-            ).count(),
-            "UnitPrice contient / ou :": df.filter(price_str.rlike(r"[/:]")).count(),
-            "InvoiceDate format invalide": df.filter(
-                ~date_str.rlike(_INVOICE_DATE_PATTERN)
-            ).count(),
-            "Quantity non castable (int)": df.filter(qty_int.isNull()).count(),
-            "UnitPrice non castable (double)": df.filter(price_dbl.isNull()).count(),
-            "InvoiceDate non castable (timestamp)": df.filter(
-                F.col("InvoiceDate").isNotNull() & inv_ts.isNull()
-            ).count(),
-            "Quantity <= 0 (après cast)": df.filter(
-                qty_int.isNotNull() & (qty_int <= 0)
-            ).count(),
-            "UnitPrice <= 0 (après cast)": df.filter(
-                price_dbl.isNotNull() & (price_dbl <= 0)
-            ).count(),
-            "Doublons (InvoiceNo+StockCode)": duplicate_groups,
-        }
     )
 
     return breakdown
