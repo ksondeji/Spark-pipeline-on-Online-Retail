@@ -2,33 +2,85 @@
 
 from __future__ import annotations
 
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+from src.ingestion.read_data import read_raw_csv
+from src.ingestion.write_data import drop_corrupt_column
 from src.transformations.cleaning import (
     _INVOICE_DATE_PATTERN,
     _QUANTITY_PATTERN,
     _UNIT_PRICE_PATTERN,
 )
+from src.utils.logger import logger
 
 
 def _violation(condition: F.Column) -> F.Column:
     return F.when(condition, 1).otherwise(0)
 
 
-def get_rejection_breakdown(spark: SparkSession, bronze_path: str) -> dict[str, int]:
+def _default_raw_path(bronze_path: str) -> str | None:
+    """Déduit le CSV raw à côté du dossier bronze (…/raw/bronze → …/Online_Retail.csv)."""
+    base = bronze_path.rstrip("/")
+    if base.endswith("/bronze"):
+        return base.rsplit("/", 1)[0] + "/Online_Retail.csv"
+    return None
+
+
+def _load_bronze_as_strings(spark: SparkSession, bronze_path: str) -> DataFrame:
+    """Relit le Delta en forçant chaque colonne en STRING (évite parse timestamp)."""
+    df = spark.read.format("delta").load(bronze_path)
+    return df.select(
+        [F.expr(f"try_cast(`{name}` AS STRING)").alias(name) for name in df.columns]
+    )
+
+
+def _load_for_breakdown(
+    spark: SparkSession,
+    bronze_path: str,
+    raw_path: str | None,
+) -> tuple[DataFrame, str]:
+    """
+    Préfère le CSV raw (schéma 100 % string) : la bronze Delta peut typer
+    InvoiceDate en timestamp et faire échouer le parse de valeurs comme '2'.
+    """
+    if raw_path is None:
+        raw_path = _default_raw_path(bronze_path)
+
+    if raw_path:
+        try:
+            df = drop_corrupt_column(read_raw_csv(spark, raw_path))
+            logger.info("Rejection breakdown : lecture CSV raw %s", raw_path)
+            return df, raw_path
+        except Exception as exc:
+            logger.warning(
+                "CSV raw illisible (%s), repli Delta bronze : %s", raw_path, exc
+            )
+
+    df = _load_bronze_as_strings(spark, bronze_path)
+    logger.info("Rejection breakdown : lecture Delta bronze %s (colonnes en STRING)", bronze_path)
+    return df, bronze_path
+
+
+def get_rejection_breakdown(
+    spark: SparkSession,
+    bronze_path: str,
+    *,
+    raw_path: str | None = None,
+) -> dict[str, int]:
     """
     Compte combien de lignes chaque règle de ``clean_transactions`` rejette.
 
-    Chaque compteur est **indépendant** (calculé sur tout le bronze) : les totaux
-    peuvent se chevaucher. Aucun ``to_timestamp`` / ``try_to_timestamp`` ici :
-    sur bronze string, le parse strict Databricks lève encore SQLSTATE 22007.
-    """
-    df = spark.read.format("delta").load(bronze_path)
+    Chaque compteur est **indépendant** : les totaux peuvent se chevaucher.
 
-    qty_str = F.col("Quantity").cast("string")
-    price_str = F.col("UnitPrice").cast("string")
-    date_str = F.col("InvoiceDate").cast("string")
+    Par défaut lit ``Online_Retail.csv`` à côté de ``bronze`` (colonnes string).
+    """
+    df, _source = _load_for_breakdown(spark, bronze_path, raw_path)
+
+    # Colonnes déjà string si CSV raw ; sinon projection try_cast ci-dessus
+    qty_str = F.col("Quantity")
+    price_str = F.col("UnitPrice")
+    date_str = F.col("InvoiceDate")
     qty_int = F.expr("try_cast(Quantity AS int)")
     price_dbl = F.expr("try_cast(UnitPrice AS double)")
 
