@@ -27,7 +27,7 @@ def get_rejection_breakdown(spark: SparkSession, bronze_path: str) -> dict[str, 
     date_str = F.col("InvoiceDate").cast("string")
     qty_int = F.expr("try_cast(Quantity AS int)")
     price_dbl = F.expr("try_cast(UnitPrice AS double)")
-    inv_date = F.to_timestamp(F.col("InvoiceDate"), "dd/MM/yyyy HH:mm:ss")
+    inv_ts = F.expr("try_to_timestamp(InvoiceDate, 'dd/MM/yyyy HH:mm:ss')")
 
     duplicate_groups = (
         df.groupBy("InvoiceNo", "StockCode")
@@ -66,7 +66,9 @@ def get_rejection_breakdown(spark: SparkSession, bronze_path: str) -> dict[str, 
             ).count(),
             "Quantity non castable (int)": df.filter(qty_int.isNull()).count(),
             "UnitPrice non castable (double)": df.filter(price_dbl.isNull()).count(),
-            "InvoiceDate non castable (timestamp)": df.filter(inv_date.isNull()).count(),
+            "InvoiceDate non castable (timestamp)": df.filter(
+                F.col("InvoiceDate").isNotNull() & inv_ts.isNull()
+            ).count(),
             "Quantity <= 0 (après cast)": df.filter(
                 qty_int.isNotNull() & (qty_int <= 0)
             ).count(),
