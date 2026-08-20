@@ -5,9 +5,11 @@ from __future__ import annotations
 import io
 import time
 from contextlib import redirect_stdout
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Callable, Literal
 
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import Column, DataFrame, SparkSession
+from pyspark.sql import functions as F
 
 REVENUE_BY_COUNTRY_SQL = """
 SELECT
@@ -270,3 +272,132 @@ def run_performance_report(
             version_v1=version_v1,
         ),
     }
+
+
+def _time_count(df: DataFrame) -> float:
+    start = time.perf_counter()
+    df.count()
+    return time.perf_counter() - start
+
+
+def ensure_partitioned_gold_variants(
+    spark: SparkSession,
+    gold_path: str,
+    output_base: str | None = None,
+) -> dict[str, str]:
+    """
+    Matérialise 3 variantes Delta partitionnées pour la démo performance.
+
+    Returns:
+        Chemins : by_country, by_year_month, by_continent_country.
+    """
+    base = (output_base or str(Path(gold_path).parent)).rstrip("/")
+    gold = spark.read.format("delta").load(gold_path)
+
+    paths = {
+        "by_country": f"{base}/gold_partitioned_by_country",
+        "by_year_month": f"{base}/gold_partitioned_by_year_month",
+        "by_continent_country": f"{base}/gold_partitioned_by_continent_country",
+    }
+
+    (
+        gold.write.format("delta")
+        .mode("overwrite")
+        .option("overwriteSchema", "true")
+        .partitionBy("Country")
+        .save(paths["by_country"])
+    )
+
+    gold_ym = gold.withColumn("year_month", F.date_format("InvoiceDate", "yyyy-MM"))
+    (
+        gold_ym.write.format("delta")
+        .mode("overwrite")
+        .option("overwriteSchema", "true")
+        .partitionBy("year_month")
+        .save(paths["by_year_month"])
+    )
+
+    (
+        gold.write.format("delta")
+        .mode("overwrite")
+        .option("overwriteSchema", "true")
+        .partitionBy("Continent", "Country")
+        .save(paths["by_continent_country"])
+    )
+
+    return paths
+
+
+def benchmark_partition_strategies(
+    spark: SparkSession,
+    gold_path: str,
+    partitioned_paths: dict[str, str] | None = None,
+    *,
+    country: str = "France",
+    year_month: str = "2011-11",
+    continent: str = "Europa",
+    create_if_missing: bool = True,
+) -> list[dict[str, Any]]:
+    """
+    Compare gold flat vs 3 stratégies : Country, year_month, Continent+Country.
+
+    Chaque stratégie chronomètre le même filtre sur table non partitionnée
+    puis sur table partitionnée (partition pruning).
+    """
+    if partitioned_paths is None and create_if_missing:
+        partitioned_paths = ensure_partitioned_gold_variants(spark, gold_path)
+    elif partitioned_paths is None:
+        raise ValueError("partitioned_paths requis si create_if_missing=False")
+
+    gold = spark.read.format("delta").load(gold_path)
+
+    strategies: list[tuple[str, str, Callable[[DataFrame], DataFrame], Column]] = [
+        (
+            "Country",
+            partitioned_paths["by_country"],
+            lambda df: df,
+            F.col("Country") == country,
+        ),
+        (
+            "year_month",
+            partitioned_paths["by_year_month"],
+            lambda df: df.withColumn(
+                "year_month", F.date_format("InvoiceDate", "yyyy-MM")
+            ),
+            F.col("year_month") == year_month,
+        ),
+        (
+            "Continent + Country",
+            partitioned_paths["by_continent_country"],
+            lambda df: df,
+            (F.col("Continent") == continent) & (F.col("Country") == country),
+        ),
+    ]
+
+    results: list[dict[str, Any]] = []
+    for label, part_path, prepare, filt in strategies:
+        flat_df = prepare(gold).filter(filt)
+        part_df = spark.read.format("delta").load(part_path).filter(filt)
+
+        # Warm-up léger (évite de comparer cold vs hot cache de façon trop biaisée)
+        flat_df.limit(1).collect()
+        part_df.limit(1).collect()
+
+        t_flat = _time_count(flat_df)
+        t_part = _time_count(part_df)
+        speedup_pct = (1 - t_part / t_flat) * 100 if t_flat > 0 else None
+
+        results.append(
+            {
+                "strategy": label,
+                "filter": str(filt),
+                "flat_seconds": round(t_flat, 4),
+                "partitioned_seconds": round(t_part, 4),
+                "speedup_pct": (
+                    round(speedup_pct, 1) if speedup_pct is not None else None
+                ),
+                "partitioned_path": part_path,
+            }
+        )
+
+    return results
