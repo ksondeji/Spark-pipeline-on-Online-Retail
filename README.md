@@ -16,38 +16,57 @@ Informations détaillées sur la base : `Online retail database informations.txt
 ```
 Spark on Online Retail/
 ├── config/
-│   ├── dev.yaml              # chemins locaux + paramètres Spark
-│   └── prod.yaml             # chemins cloud (S3, etc.)
-├── data/
-│   ├── raw/                  # CSV source
-│   ├── bronze/               # snapshot brut (Delta)
-│   ├── silver/               # données nettoyées (Delta)
-│   └── gold/                 # données enrichies (Delta)
+│   ├── dev.yaml                 # chemins locaux + Spark
+│   ├── databricks.yaml          # volumes Unity Catalog + Serverless
+│   └── prod.yaml                # chemins cloud (S3, etc.)
+├── scripts/
+│   └── databricks_volumes.sql   # création volumes UC (optionnel)
+├── notebooks/
+│   ├── Run project.ipynb        # lancement pipeline + rapport analytics
+│   ├── Analytics overview.ipynb # métriques, RFM, Pareto, partitions, explain
+│   ├── Online_retail_pipeline.ipynb  # notebook d’origine (exploration)
+│   └── run_pipeline_databricks.py
 ├── src/
-│   ├── main.py               # point d’entrée du pipeline
+│   ├── main.py                  # orchestration bronze → silver → gold
 │   ├── ingestion/
-│   │   ├── spark_session.py  # Spark + Delta (Windows-friendly)
-│   │   ├── read_data.py      # lecture CSV typée
-│   │   └── write_data.py     # écriture Delta
+│   │   ├── spark_session.py     # Spark local / DatabricksSession
+│   │   ├── read_data.py         # CSV PERMISSIVE + schéma string
+│   │   └── write_data.py        # écriture / relecture Delta
 │   ├── transformations/
-│   │   ├── cleaning.py       # règles de nettoyage
-│   │   └── enrichment.py     # segments, catégories, OrderAmount
+│   │   ├── cleaning.py          # règles silver
+│   │   ├── enrichment.py        # OrderAmount, segments, catégories
+│   │   └── geo_mapping.py       # mapping Country → Continent
 │   ├── quality/
-│   │   └── checks.py         # contrôles + rapport / exception
+│   │   ├── checks.py            # contraintes métier
+│   │   └── rejection_breakdown.py  # comptage des rejets (bronze)
 │   ├── analytics/
+│   │   ├── runner.py            # rapport complet (tables phase*, time travel)
+│   │   ├── delta_tables.py      # enregistrement phase1…phase4 (UC)
 │   │   ├── sales_analysis.py
-│   │   ├── performance_analysis.py
-│   │   └── runner.py         # analyses post-pipeline
+│   │   ├── customer_analysis.py # RFM, cohortes
+│   │   ├── pareto_analysis.py
+│   │   ├── returns_analysis.py  # retours bronze + catégories gold
+│   │   ├── temporal_analysis.py
+│   │   └── performance_analysis.py  # partitionnement, explain, history
 │   └── utils/
-│       ├── config.py         # get_config()
-│       └── logger.py
+│       ├── config.py
+│       ├── logger.py
+│       ├── schema_debug.py
+│       └── spark_compat.py
 ├── tests/
 │   ├── test_cleaning.py
+│   ├── test_enrichment.py
 │   └── test_quality.py
-├── Online_retail_pipeline.ipynb
 ├── requirements.txt
-└── .env.example
+├── requirements-local.txt
+├── requirements-databricks.txt
+├── .env.example
+└── README.md
 ```
+
+Les données Delta (bronze / silver / gold) et le CSV raw sont stockés hors du dépôt :
+en local via les chemins de `config/dev.yaml` / `.env`, sur Databricks sous
+`/Volumes/main/default/raw/...` (`config/databricks.yaml`).
 
 ## Le problème
 
@@ -160,7 +179,7 @@ A. Google Colab
 
 B. Databricks
 
-1. Aller dans le dossier `notebooks` -> Ouvrir `Run pipeline.ipynb` -> exécuter les cellules dans l’ordre.
+1. Aller dans le dossier `notebooks` -> Ouvrir `Analytics overview.ipynb` -> exécuter les cellules dans l’ordre.
 
 ## Présentation de la base de données
 
