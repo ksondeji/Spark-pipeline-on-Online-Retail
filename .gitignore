@@ -7,3 +7,4 @@ derby.log
 metastore_db/
 data/
 *.egg-info/
+report/Rapport_synthèse.docx
