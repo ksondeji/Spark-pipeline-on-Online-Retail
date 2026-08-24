@@ -18,7 +18,7 @@ class DataQualityError(Exception):
 
 
 def _raw_constraints() -> list[tuple[str, Column]]:
-    """Contrôles sur données BRUTES (strings). Construites à l'appel (après SparkSession), pas à l'import du module."""
+    """Construites à l'appel (après SparkSession), pas à l'import."""
     return [
         ("customer_id_not_null", col("CustomerID").isNull()),
         ("invoice_no_not_null", col("InvoiceNo").isNull()),

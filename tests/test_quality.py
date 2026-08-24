@@ -19,8 +19,26 @@ def spark():
 def test_run_checks_passes_after_cleaning(spark):
     raw = spark.createDataFrame(
         [
-            ("536365", "85123A", "WHITE HEART", 6, "01/12/2010 08:26:00", 2.55, "17850", "United Kingdom"),
-            ("536366", "71053", "LANTERN", 6, "01/12/2010 08:28:00", 3.39, "17850", "United Kingdom"),
+            (
+                "536365",
+                "85123A",
+                "WHITE HEART",
+                6,
+                "01/12/2010 08:26:00",
+                2.55,
+                "17850",
+                "United Kingdom",
+            ),
+            (
+                "536366",
+                "71053",
+                "LANTERN",
+                6,
+                "01/12/2010 08:28:00",
+                3.39,
+                "17850",
+                "United Kingdom",
+            ),
         ],
         [
             "InvoiceNo",
@@ -43,7 +61,16 @@ def test_run_checks_passes_after_cleaning(spark):
 def test_run_checks_raises_on_cancelled_invoice(spark):
     raw = spark.createDataFrame(
         [
-            ("C536365", "85123A", "CANCELLED", 1, "01/12/2010 08:26:00", 2.55, "17850", "UK"),
+            (
+                "C536365",
+                "85123A",
+                "CANCELLED",
+                1,
+                "01/12/2010 08:26:00",
+                2.55,
+                "17850",
+                "UK",
+            ),
         ],
         [
             "InvoiceNo",
@@ -60,5 +87,9 @@ def test_run_checks_raises_on_cancelled_invoice(spark):
         run_checks(raw, raise_on_failure=True)
 
     assert exc_info.value.report["passed"] is False
-    failed = {c["name"] for c in exc_info.value.report["constraints"] if not c["passed"]}
+    failed = {
+        c["name"]
+        for c in exc_info.value.report["constraints"]
+        if not c["passed"]
+    }
     assert "invoice_not_cancelled" in failed

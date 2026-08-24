@@ -32,15 +32,60 @@ def test_cleaning_transactions(spark):
     raw = spark.createDataFrame(
         [
             # conservée : facture valide, StockCode sur 5 caractères
-            ("536365", "85123", "WHITE HEART", 6, "01/12/2010 08:26:00", 2.55, "17850", "United Kingdom"),
+            (
+                "536365",
+                "85123",
+                "WHITE HEART",
+                6,
+                "01/12/2010 08:26:00",
+                2.55,
+                "17850",
+                "United Kingdom",
+            ),
             # exclue : annulation (préfixe c)
-            ("c536346", "71053", "LANTERN", 2, "01/12/2010 08:28:00", 3.39, "21472", "United Kingdom"),
+            (
+                "c536346",
+                "71053",
+                "LANTERN",
+                2,
+                "01/12/2010 08:28:00",
+                3.39,
+                "21472",
+                "United Kingdom",
+            ),
             # exclue : facture aberrante 541431
-            ("541431", "43690", "WHITE MEAL", 3, "01/12/2010 08:26:00", 1.87, "79850", "United Kingdom"),
+            (
+                "541431",
+                "43690",
+                "WHITE MEAL",
+                3,
+                "01/12/2010 08:26:00",
+                1.87,
+                "79850",
+                "United Kingdom",
+            ),
             # exclue : StockCode != 5 caractères
-            ("536366", "71053AD3", "ORANGE PAPER", 7, "01/12/2010 08:28:00", 5.19, "23096", "United Kingdom"),
+            (
+                "536366",
+                "71053AD3",
+                "ORANGE PAPER",
+                7,
+                "01/12/2010 08:28:00",
+                5.19,
+                "23096",
+                "United Kingdom",
+            ),
             # exclue : CustomerID null
-            ("536367", "85124", "NO CUSTOMER", 1, "01/12/2010 09:00:00", 1.0, None, "France"),
+            (
+                "536367",
+                "85124",
+                "NO CUSTOMER",
+                1,
+                "01/12/2010 09:00:00",
+                1.0,
+                None,
+                "France",
+            ),
         ],
         COLUMNS,
     )

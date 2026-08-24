@@ -26,7 +26,7 @@ from pyspark.sql.functions import col
 
 from src.transformations.cleaning import clean_transactions
 from src.transformations.enrichment import enrich_transactions
-from src.utils.config import get_config, is_databricks_cluster
+from src.utils.config import get_config
 from src.utils.logger import logger
 from src.utils.schema_debug import inspect_dataframe_schema
 
@@ -57,7 +57,7 @@ def run_pipeline(
     *,
     analytics: bool = False,
     debug_schema: bool = False,
-    ) -> int:
+) -> int:
     """
     Point d'entrée pour notebook Databricks (évite argparse / sys.argv).
 
