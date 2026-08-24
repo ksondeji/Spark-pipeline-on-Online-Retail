@@ -1,12 +1,17 @@
-# continent ; segmentation ; catégories produits ; shopsize
+# continent, segmentation, catégories produits, shopsize
+from __future__ import annotations
+
 from pyspark.sql import Column
 from pyspark.sql.functions import col, lit, lower, when
 
 from src.transformations.geo_mapping import COUNTRY_CONTINENT_CONTAINS
 
 
-def _continent_from_country(country_col: Column = col("Country")) -> Column:
+def _continent_from_country(country_col: Column | None = None) -> Column:
     """Mapping notebook : Country.contains(...) → Europa, Asia, etc."""
+    if country_col is None:
+        country_col = col("Country")
+
     if not COUNTRY_CONTINENT_CONTAINS:
         return lit("Other")
 

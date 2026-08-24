@@ -17,33 +17,35 @@ class DataQualityError(Exception):
         )
 
 
-# Contrôles sur données BRUTES (string) — optionnel, avant nettoyage
-RAW_CONSTRAINTS: list[tuple[str, Column]] = [
-    ("customer_id_not_null", col("CustomerID").isNull()),
-    ("invoice_no_not_null", col("InvoiceNo").isNull()),
-    ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
-    ("invoice_not_541431", col("InvoiceNo") == "541431"),
-    ("stock_code_length_5", length(col("StockCode")) != 5),
-]
+def _raw_constraints() -> list[tuple[str, Column]]:
+    """Contrôles sur données BRUTES (strings). Construites à l'appel (après SparkSession), pas à l'import du module."""
+    return [
+        ("customer_id_not_null", col("CustomerID").isNull()),
+        ("invoice_no_not_null", col("InvoiceNo").isNull()),
+        ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
+        ("invoice_not_541431", col("InvoiceNo") == "541431"),
+        ("stock_code_length_5", length(col("StockCode")) != 5),
+    ]
 
-# Silver relu depuis Delta : uniquement colonnes string (évite CAST implicite Photon)
-SILVER_CONSTRAINTS: list[tuple[str, Column]] = [
-    ("customer_id_not_null", col("CustomerID").isNull()),
-    ("invoice_no_not_null", col("InvoiceNo").isNull()),
-    ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
-    ("invoice_not_541431", col("InvoiceNo") == "541431"),
-    ("stock_code_length_5", length(col("StockCode")) != 5),
-]
 
-ENRICHED_CONSTRAINTS: list[tuple[str, Column]] = [
-    ("item_code_length_5", length(col("ItemCode")) != 5),
-    (
-        "order_amount_positive",
-        col("OrderAmount").isNull() | (col("OrderAmount") <= 0),
-    ),
-]
+def _silver_constraints() -> list[tuple[str, Column]]:
+    return [
+        ("customer_id_not_null", col("CustomerID").isNull()),
+        ("invoice_no_not_null", col("InvoiceNo").isNull()),
+        ("invoice_not_cancelled", lower(col("InvoiceNo")).startswith("c")),
+        ("invoice_not_541431", col("InvoiceNo") == "541431"),
+        ("stock_code_length_5", length(col("StockCode")) != 5),
+    ]
 
-CLEANING_CONSTRAINTS = SILVER_CONSTRAINTS
+
+def _enriched_constraints() -> list[tuple[str, Column]]:
+    return [
+        ("item_code_length_5", length(col("ItemCode")) != 5),
+        (
+            "order_amount_positive",
+            col("OrderAmount").isNull() | (col("OrderAmount") <= 0),
+        ),
+    ]
 
 
 def _evaluate_constraints(
@@ -75,11 +77,11 @@ def run_checks(
     Les contrôles numériques sont faits dans clean_transactions, pas ici sur silver.
     """
     if scope == "raw":
-        constraints_def = RAW_CONSTRAINTS
+        constraints_def = _raw_constraints()
     elif scope in ("cleaning", "silver"):
-        constraints_def = SILVER_CONSTRAINTS
+        constraints_def = _silver_constraints()
     elif scope == "enriched":
-        constraints_def = ENRICHED_CONSTRAINTS
+        constraints_def = _enriched_constraints()
     else:
         raise ValueError("scope doit être 'raw', 'silver', 'cleaning' ou 'enriched'")
 
