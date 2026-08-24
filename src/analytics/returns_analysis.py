@@ -30,11 +30,17 @@ def _is_return_line():
     return F.lower(F.col("InvoiceNo")).startswith("c") | (qty < 0)
 
 
+def _mark_returns_on_gold(df):
+    return df.withColumn(
+        "is_return",
+        F.col("InvoiceNo").startswith("C") | (F.col("Quantity") < 0),
+    )
+
+
 def get_returns_summary(spark, gold_path, bronze_path=None):
     """Vue globale : part du CA annulé (retours lus depuis bronze si fourni)."""
     if not bronze_path:
-        df = spark.read.format("delta").load(gold_path)
-        df = df.withColumn("is_return", F.col("InvoiceNo").startswith("C") | (F.col("Quantity") < 0))
+        df = _mark_returns_on_gold(spark.read.format("delta").load(gold_path))
     else:
         df = _bronze_with_category(spark, bronze_path, gold_path).withColumn(
             "is_return", _is_return_line()
@@ -44,7 +50,10 @@ def get_returns_summary(spark, gold_path, bronze_path=None):
         F.count("*").alias("nb_lines"),
         F.countDistinct("InvoiceNo").alias("nb_invoices"),
         F.sum(
-            F.abs(F.expr("try_cast(Quantity AS int)") * F.expr("try_cast(UnitPrice AS double)"))
+            F.abs(
+                F.expr("try_cast(Quantity AS int)")
+                * F.expr("try_cast(UnitPrice AS double)")
+            )
         ).alias("total_amount"),
     )
 
@@ -56,12 +65,13 @@ def get_return_rate_by_category(spark, gold_path, bronze_path=None):
     Les annulations ne sont pas dans gold : passer ``bronze_path`` (couche brute).
     """
     if bronze_path is None:
-        df = spark.read.format("delta").load(gold_path)
-        df = df.withColumn("is_return", F.col("InvoiceNo").startswith("C") | (F.col("Quantity") < 0))
+        df = _mark_returns_on_gold(spark.read.format("delta").load(gold_path))
         return (
             df.groupBy("product_category")
             .agg(
-                F.sum(F.when(F.col("is_return"), 1).otherwise(0)).alias("nb_returns"),
+                F.sum(F.when(F.col("is_return"), 1).otherwise(0)).alias(
+                    "nb_returns"
+                ),
                 F.count("*").alias("nb_total"),
             )
             .withColumn(
@@ -99,8 +109,7 @@ def get_return_rate_by_category(spark, gold_path, bronze_path=None):
 
 def get_return_rate_by_country(spark, gold_path, bronze_path=None):
     if not bronze_path:
-        df = spark.read.format("delta").load(gold_path)
-        df = df.withColumn("is_return", F.col("InvoiceNo").startswith("C") | (F.col("Quantity") < 0))
+        df = _mark_returns_on_gold(spark.read.format("delta").load(gold_path))
     else:
         df = _bronze_with_category(spark, bronze_path, gold_path).withColumn(
             "is_return", _is_return_line()
@@ -109,7 +118,9 @@ def get_return_rate_by_country(spark, gold_path, bronze_path=None):
     return (
         df.groupBy("Country")
         .agg(
-            F.sum(F.when(F.col("is_return"), 1).otherwise(0)).alias("nb_returns"),
+            F.sum(F.when(F.col("is_return"), 1).otherwise(0)).alias(
+                "nb_returns"
+            ),
             F.count("*").alias("nb_total"),
         )
         .withColumn(

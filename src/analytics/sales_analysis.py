@@ -4,7 +4,7 @@ from pyspark.sql.window import Window
 
 
 def _cumulative_revenue_window() -> Window:
-    """Fenêtre globale explicite (évite « No Partition Defined ») + cumul ordonné."""
+    """Fenêtre globale explicite (évite « No Partition Defined ») + cumul."""
     return (
         Window.partitionBy(lit(1))
         .orderBy(col("total_revenue").desc())
@@ -52,7 +52,9 @@ def get_mean_spend_by_segment(spark: SparkSession, path: str) -> DataFrame:
     )
 
 
-def get_top_category_for_big_customer(spark: SparkSession, path: str) -> DataFrame:
+def get_top_category_for_big_customer(
+    spark: SparkSession, path: str
+) -> DataFrame:
     return (
         _read_gold(spark, path)
         .filter(col("High_spender") == True)  # noqa: E712
@@ -63,7 +65,9 @@ def get_top_category_for_big_customer(spark: SparkSession, path: str) -> DataFra
     )
 
 
-def get_sales_by_country_continent(spark: SparkSession, path: str) -> DataFrame:
+def get_sales_by_country_continent(
+    spark: SparkSession, path: str
+) -> DataFrame:
     return (
         _read_gold(spark, path)
         .groupBy("Country", "Continent")
@@ -72,13 +76,17 @@ def get_sales_by_country_continent(spark: SparkSession, path: str) -> DataFrame:
     )
 
 
-def get_cumulative_contribution_by_country(spark: SparkSession, path: str) -> DataFrame:
+def get_cumulative_contribution_by_country(
+    spark: SparkSession, path: str
+) -> DataFrame:
     window = _cumulative_revenue_window()
     return (
         _read_gold(spark, path)
         .groupBy("Country")
         .agg(sum("OrderAmount").alias("total_revenue"))
-        .withColumn("cumulative_contribution", sum("total_revenue").over(window))
+        .withColumn(
+            "cumulative_contribution", sum("total_revenue").over(window)
+        )
         .orderBy(col("total_revenue").desc())
     )
 
@@ -91,6 +99,8 @@ def get_cumulative_contribution_by_customer_id(
         _read_gold(spark, path)
         .groupBy("CustomerID")
         .agg(sum("OrderAmount").alias("total_revenue"))
-        .withColumn("cumulative_contribution", sum("total_revenue").over(window))
+        .withColumn(
+            "cumulative_contribution", sum("total_revenue").over(window)
+        )
         .orderBy(col("total_revenue").desc())
     )

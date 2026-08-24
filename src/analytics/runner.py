@@ -96,12 +96,32 @@ def run_full_analytics_report(
     gold_path = paths["gold"]
 
     logger.info("--- Analyses ventes (gold) ---")
-    _show_section("CA par pays", get_sales_by_country(spark, gold_path).orderBy("total_revenue", ascending=False))
-    _show_section("CA par catégorie", get_sales_by_product_category(spark, gold_path))
-    _show_section("CA par continent", get_sales_by_continent(spark, gold_path))
-    _show_section("CA par segment", get_sales_by_purchase_segment(spark, gold_path))
-    _show_section("CA par taille boutique", get_sales_by_shopsize(spark, gold_path), limit=None)
-    _show_section("Panier moyen par segment", get_mean_spend_by_segment(spark, gold_path), limit=None)
+    _show_section(
+        "CA par pays",
+        get_sales_by_country(spark, gold_path).orderBy(
+            "total_revenue", ascending=False
+        ),
+    )
+    _show_section(
+        "CA par catégorie",
+        get_sales_by_product_category(spark, gold_path),
+    )
+    _show_section(
+        "CA par continent", get_sales_by_continent(spark, gold_path)
+    )
+    _show_section(
+        "CA par segment", get_sales_by_purchase_segment(spark, gold_path)
+    )
+    _show_section(
+        "CA par taille boutique",
+        get_sales_by_shopsize(spark, gold_path),
+        limit=None,
+    )
+    _show_section(
+        "Panier moyen par segment",
+        get_mean_spend_by_segment(spark, gold_path),
+        limit=None,
+    )
     _show_section(
         "Top catégories (High_spender)",
         get_top_category_for_big_customer(spark, gold_path),
